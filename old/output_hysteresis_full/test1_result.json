@@ -1,0 +1,50 @@
+{
+  "image": "test1.jpg",
+  "scale_used": 0.439453125,
+  "roi_source": "auto",
+  "roi_used_on_resized_image": [
+    36,
+    27,
+    1764,
+    1323
+  ],
+  "roi_used_on_original_image_approx": [
+    81,
+    61,
+    4014,
+    3010
+  ],
+  "extraction_info": {
+    "chosen_threshold": 70,
+    "threshold_trials": [
+      [
+        70,
+        84310
+      ]
+    ],
+    "score_nonzero": 2239488,
+    "mask_points": 84310
+  },
+  "has_voltage": false,
+  "has_physical_HB": false,
+  "parameters": {
+    "star_Hm": 0.9114583333333334,
+    "star_Bm": 1.1412122080801077,
+    "star_Br_abs": 0.18996084377003905,
+    "star_Hc_abs": 0.14468483253555628,
+    "star_LoopArea": 0.17215374209040704,
+    "star_Br_values": [
+      0.2049047000216581,
+      -0.17501698751842001
+    ],
+    "star_Hc_roots": [
+      -0.05325797550412984,
+      0.2569821607505612,
+      0.04504362893279363,
+      0.22345556495474042
+    ]
+  },
+  "diagnosis": [
+    "回线提取和分支重建正常，可用于后续参数分析。"
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "image": "test1.jpg",
+  "roi": [
+    343,
+    61,
+    3865,
+    3011
+  ],
+  "calibration": {
+    "origin_x_roi_px": 1761.0,
+    "origin_y_roi_px": 1475.0,
+    "px_per_div_x": 352.2,
+    "px_per_div_y": 368.75
+  },
+  "component_count_kept": 1,
+  "mask_pixel_count": 330590,
+  "normalized": {
+    "star_Hm": 0.2798065222681918,
+    "star_Bm": 0.7335706150886696,
+    "star_Br_values": [
+      0.2769242197160673,
+      -0.0035866515225975544
+    ],
+    "star_Br_abs_mean": 0.14025543561933243,
+    "star_Hc_values": [
+      -0.08858402690565742,
+      0.0010815536769918062
+    ],
+    "star_Hc_abs_mean": 0.044832790291324615,
+    "star_LoopArea": 0.07950723256696324
+  },
+  "voltage": {
+    "voltage_Hm": 0.6995163056704794,
+    "voltage_Bm": 1.4671412301773392,
+    "voltage_Br_values": [
+      0.5538484394321345,
+      -0.007173303045195187
+    ],
+    "voltage_Br_abs_mean": 0.2805108712386648,
+    "voltage_Hc_values": [
+      -0.22146006726414358,
+      0.0027038841924795533
+    ],
+    "voltage_Hc_abs_mean": 0.11208197572831156,
+    "voltage_LoopArea": 0.39753616283481624
+  },
+  "diagnostics": [
+    "当前默认使用ROI中心作为坐标原点。若示波器零点未居中，Br/Hc会有系统偏差，建议使用 --origin x,y 手动标定。"
+  ]
+}

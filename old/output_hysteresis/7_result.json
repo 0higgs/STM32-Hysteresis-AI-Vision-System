@@ -1,0 +1,52 @@
+{
+  "image": "7.jpg",
+  "roi": {
+    "x1": 58,
+    "y1": 20,
+    "x2": 260,
+    "y2": 220
+  },
+  "calibration": {
+    "x_vdiv": 0.2,
+    "y_vdiv": 0.02,
+    "x_divs": 8.0,
+    "y_divs": 8.0,
+    "R1": 1.0,
+    "U": 5.0,
+    "n": 150.0,
+    "N": 50.0,
+    "R2": 10000.0,
+    "C2": 1e-05,
+    "l": null,
+    "S": null
+  },
+  "axis": {
+    "x0": 101.0,
+    "y0": 100.0,
+    "px_per_div_x": 25.25,
+    "px_per_div_y": 25.0,
+    "roi_w": 202,
+    "roi_h": 200
+  },
+  "params": {
+    "Hm_star": 0.693069306930693,
+    "Bm_star": 0.98,
+    "Br_star_abs": 0.7050000000000001,
+    "Hc_star_abs": 0.3722772277227723,
+    "LoopArea_star": 1.1797524752475248,
+    "UH_max_V": 0.5544554455445544,
+    "UB_max_V": 0.0784,
+    "UB_r_abs_V": 0.05592,
+    "UH_c_abs_V": 0.2954455445544555,
+    "LoopArea_UH_UB_V2": 0.07550415841584159,
+    "Hm_A_per_m": null,
+    "Bm_T": null,
+    "Br_abs_T": null,
+    "Hc_abs_A_per_m": null,
+    "LoopArea_BH_J_per_m3": null
+  },
+  "diagnosis": [
+    "回线接近屏幕边界：可能存在截断风险，建议调小 X/Y 灵敏度或重新居中。"
+  ],
+  "notes": "带 star 的参数为归一化参数；若未输入 R1/l/S，则部分真实物理量无法计算。"
+}

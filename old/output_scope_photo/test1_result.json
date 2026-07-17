@@ -1,0 +1,43 @@
+{
+  "image": "test1.jpg",
+  "roi": [
+    0,
+    0,
+    4096,
+    3072
+  ],
+  "settings": {
+    "image": "test1.jpg",
+    "roi": null,
+    "threshold": 35.0,
+    "min_area": 500,
+    "outdir": "output_scope_photo",
+    "x_vdiv": 0.5,
+    "y_vdiv": 0.5,
+    "x_divs": 10.0,
+    "y_divs": 8.0,
+    "R1": 2.5,
+    "U": 2.5,
+    "n": 150.0,
+    "N": 50.0,
+    "R2": 10000.0,
+    "C2": 1e-05,
+    "l": null,
+    "S": null
+  },
+  "params": {
+    "Hm_star": 0.22900390625,
+    "Bm_star": 0.7024739583333334,
+    "Hc_star_abs": 0.044744429432957394,
+    "Br_star_abs": 0.1622833727728285,
+    "LoopArea_star": 0.10450331370035806,
+    "UH_max_V": 0.572509765625,
+    "UB_max_V": 1.4049479166666667,
+    "UHc_abs_V": 0.11186107358239349,
+    "UBr_abs_V": 0.324566745545657,
+    "LoopArea_UH_UB_V2": 0.5225165685017903
+  },
+  "diagnosis": [
+    "回线提取基本正常，可进行磁滞参数分析。"
+  ]
+}
