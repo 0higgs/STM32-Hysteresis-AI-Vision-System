@@ -64,8 +64,7 @@ def imwrite_unicode(path: str, img
 ]
     ok, buf = cv2.imencode(ext, img
 )
-    if ok
-:
+    if ok:
         buf.tofile(path
 )
     return ok
@@ -78,13 +77,11 @@ def parse_roi(roi_str
         return None
     parts = [int(float(x)) for x in roi_str.split(","
 )]
-    if len(parts) != 4
-:
+    if len(parts) != 4:
         raise ValueError("--roi 格式必须是 x1,y1,x2,y2"
 )
     x1, y1, x2, y2 = parts
-    if x2 <= x1 or y2 <= y1
-:
+    if x2 <= x1 or y2 <= y1:
         raise ValueError("--roi 中 x2/y2 必须大于 x1/y1"
 )
     return x1, y1, x2, y2
@@ -189,19 +186,16 @@ uint8)
 ):
         x, y, bw, bh, area = stats[i
 ]
-        if area < 0.08 * w * h
-:
+        if area < 0.08 * w * h:
             continue
         ratio = bw / max(bh, 1
 )
-        if 0.8 < ratio < 2.2 and area > best_area
-:
+        if 0.8 < ratio < 2.2 and area > best_area:
             best_area = area
             best = (x, y, x + bw, y + bh
 )
 
-    if best is None
-:
+    if best is None:
         # 保守兜底：去掉外缘 5%
         return int(0.05 * w), int(0.05 * h), int(0.95 * w), int(0.95 * h
 )
@@ -283,8 +277,7 @@ def threshold_trace(score_u8, threshold="auto"
     - "auto": 自动 Otsu + 分位数兜底
     - 数值：手动阈值
     """
-    if str(threshold).lower() == "auto"
-:
+    if str(threshold).lower() == "auto":
         # 先用 Otsu
         _, m1 = cv2.threshold(score_u8, 0, 255, cv2.THRESH_BINARY + cv2.
 THRESH_OTSU)
@@ -292,8 +285,7 @@ THRESH_OTSU)
         # 再用高分位数，防止 Otsu 过低吃进背景
         nz = score_u8[score_u8 > 0
 ]
-        if len(nz) == 0
-:
+        if len(nz) == 0:
             return np.zeros_like(score_u8
 )
         q = np.percentile(nz, 96.5
@@ -304,12 +296,10 @@ THRESH_BINARY)
         # 两者取交集偏保守；若太少，再退回 m1
         m = cv2.bitwise_and(m1, m2
 )
-        if cv2.countNonZero(m) < 80
-:
+        if cv2.countNonZero(m) < 80:
             m = m2 if cv2.countNonZero(m2) > 80 else m1
         return m
-    else
-:
+    else:
         th = float(threshold
 )
         _, m = cv2.threshold(score_u8, th, 255, cv2.
@@ -344,32 +334,27 @@ def filter_components(mask, score_u8, min_area=80, border_margin=12
         x, y, bw, bh, area = stats[i
 ]
 
-        if area < min_area
-:
+        if area < min_area:
             continue
 
         # 去掉贴边的横线、边框和外壳反光
         touches_border = (x <= border_margin or y <= border_margin or
                           x + bw >= w - border_margin or y + bh >= h - border_margin
 )
-        if touches_border
-:
+        if touches_border:
             # 真实回线一般不应该贴屏幕边缘；如果你们回线贴边，应该调示波器位置
             continue
 
         aspect = bw / max(bh, 1
 )
         # 去掉明显水平/垂直网格线
-        if aspect > 7.0 and bh < 0.12 * h
-:
+        if aspect > 7.0 and bh < 0.12 * h:
             continue
-        if aspect < 0.12 and bw < 0.12 * w
-:
+        if aspect < 0.12 and bw < 0.12 * w:
             continue
 
         # 磁滞回线通常同时有一定宽高
-        if bw < 0.025 * w or bh < 0.04 * h
-:
+        if bw < 0.025 * w or bh < 0.04 * h:
             continue
 
         comp_mask = (labels == i
@@ -385,8 +370,7 @@ mean())
     cleaned = np.zeros_like(mask
 )
 
-    if not candidates
-:
+    if not candidates:
         return cleaned
 , []
 
@@ -397,18 +381,15 @@ mean())
 
     kept =
  []
-    for item in candidates
-:
+    for item in candidates:
         comp_score, i, x, y, bw, bh, area, mean_score = item
         # 保留得分较高的多个片段，允许回线断裂为几段
-        if comp_score >= 0.18 * best_score or len(kept) < 3
-:
+        if comp_score >= 0.18 * best_score or len(kept) < 3:
             cleaned[labels == i] = 255
             kept.append(item
 )
 
-        if len(kept) >= 12
-:
+        if len(kept) >= 12:
             break
 
     # 轻微闭运算连接断裂，不做强开运算，避免细线被抹掉
@@ -437,8 +418,7 @@ uint8)
 )
 
     # 如果过滤过严导致为空，放宽边界兜底
-    if cv2.countNonZero(mask) < 80
-:
+    if cv2.countNonZero(mask) < 80:
         mask, comps = filter_components(mask0, score, min_area=max(10, min_area // 3), border_margin=3
 )
 
@@ -449,8 +429,7 @@ def points_from_mask(mask
 ):
     ys, xs = np.where(mask > 0
 )
-    if len(xs) == 0
-:
+    if len(xs) == 0:
         raise RuntimeError("未提取到有效回线：请检查 ROI 是否框住屏幕，或降低 --threshold，例如 --threshold 15。"
 )
     return xs.astype(np.float64), ys.astype(np.
@@ -473,12 +452,10 @@ def normalize_and_voltage(xs, ys, roi_shape, args
     h, w = roi_shape[:2
 ]
 
-    if args.origin is not None
-:
+    if args.origin is not None:
         ox, oy = [float(v) for v in args.origin.split(","
 )]
-    else
-:
+    else:
         ox, oy = w / 2.0, h / 2.0
 
     px_per_div_x = w / float(args.
@@ -519,12 +496,10 @@ def voltage_to_HB(UH, UB, args
     """
     H = None
     B = None
-    if args.l is not None and args.R1 is not None
-:
+    if args.l is not None and args.R1 is not None:
         H = args.n * UH / (args.l * args.
 R1)
-    if args.S is not None
-:
+    if args.S is not None:
         B = args.R2 * args.C2 * UB / (args.N * args.
 S)
     return H, B
@@ -536,13 +511,11 @@ S)
 
 def moving_average(y, win=7
 ):
-    if win <= 1
-:
+    if win <= 1:
         return y
     win = int(win
 )
-    if win % 2 == 0
-:
+    if win % 2 == 0:
         win += 1
     pad = win // 2
     ypad = np.pad(y, (pad, pad), mode="edge"
@@ -558,43 +531,35 @@ def smooth_array(y, window=21, poly=3
 )
     n = len(y
 )
-    if n < 5
-:
+    if n < 5:
         return y
 
     window = int(window
 )
-    if window % 2 == 0
-:
+    if window % 2 == 0:
         window += 1
     window = min(window, n if n % 2 == 1 else n - 1
 )
 
-    if window < 5
-:
+    if window < 5:
         return moving_average(y, 3
 )
 
-    if HAS_SCIPY
-:
+    if HAS_SCIPY:
         # 先中值滤波去毛刺，再 SG 平滑
         k = min(7, window
 )
-        if k % 2 == 0
-:
+        if k % 2 == 0:
             k += 1
-        try
-:
+        try:
             y2 = medfilt(y, kernel_size=k
 )
             return savgol_filter(y2, window_length=window, polyorder=min(poly, window - 2), mode="interp"
 )
-        except Exception
-:
+        except Exception:
             return moving_average(y, min(9, window
 ))
-    else
-:
+    else:
         return moving_average(y, min(9, window
 ))
 
@@ -607,8 +572,7 @@ def split_two_clusters(values, min_gap_ratio=0.12
     """
     v = np.sort(np.asarray(values, dtype=float
 ))
-    if len(v) < 4
-:
+    if len(v) < 4:
         return None
 
     # 去掉极端点
@@ -616,14 +580,12 @@ def split_two_clusters(values, min_gap_ratio=0.12
 ])
     v = v[(v >= lo) & (v <= hi
 )]
-    if len(v) < 4
-:
+    if len(v) < 4:
         return None
 
     span = v[-1] - v[0
 ]
-    if span < 1e-9
-:
+    if span < 1e-9:
         med = float(np.median(v
 ))
         return med, med
@@ -636,16 +598,13 @@ def split_two_clusters(values, min_gap_ratio=0.12
 ]
 
     # 如果明显是两簇，分开；否则当作一条线
-    if max_gap > min_gap_ratio * span and idx >= 1 and idx < len(v) - 2
-:
+    if max_gap > min_gap_ratio * span and idx >= 1 and idx < len(v) - 2:
         lower = v[:idx + 1
 ]
-        upper = v[idx + 1
-:]
+        upper = v[idx + 1:]
         return float(np.median(lower)), float(np.median(upper
 ))
-    else
-:
+    else:
         med = float(np.median(v
 ))
         return med, med
@@ -684,8 +643,7 @@ def reconstruct_branches(x, y, bins=140, smooth_window=21, min_points_per_bin=8
     y = y[keep
 ]
 
-    if len(x) < 50
-:
+    if len(x) < 50:
         raise RuntimeError("有效点太少，无法重建分支。请降低 threshold 或检查 ROI。"
 )
 
@@ -729,14 +687,12 @@ T)
 )
         vals = y[m
 ]
-        if len(vals) < min_points_per_bin
-:
+        if len(vals) < min_points_per_bin:
             continue
 
         pair = split_two_clusters(vals
 )
-        if pair is None
-:
+        if pair is None:
             continue
 
         lower, upper = pair
@@ -756,8 +712,7 @@ T)
     upper = np.asarray(upper_list, dtype=float
 )
 
-    if len(xc) < 8
-:
+    if len(xc) < 8:
         raise RuntimeError("分支重建失败：可尝试降低 --bins，或降低 --min-points-per-bin。"
 )
 
@@ -786,8 +741,7 @@ T)
     if sw >= len(xc
 ):
         sw = len(xc) - 1
-    if sw % 2 == 0
-:
+    if sw % 2 == 0:
         sw -= 1
     sw = max(5, sw
 )
@@ -819,12 +773,10 @@ def interp_crossing_x(x, y, target=0.0
         if not np.isfinite(y1) or not np.isfinite(y2
 ):
             continue
-        if (y1 - target) == 0
-:
+        if (y1 - target) == 0:
             out.append(x[i
 ])
-        if (y1 - target) * (y2 - target) < 0 and abs(y2 - y1) > 1e-12
-:
+        if (y1 - target) * (y2 - target) < 0 and abs(y2 - y1) > 1e-12:
             t = (target - y1) / (y2 - y1
 )
             out.append(x[i] + t * (x[i + 1] - x[i
@@ -878,12 +830,10 @@ def branch_parameters(x, lower, upper, prefix=""
 )
     y0l = interp_y_at_x(x, lower, 0.0
 )
-    if y0u is not None
-:
+    if y0u is not None:
         br_values.append(y0u
 )
-    if y0l is not None
-:
+    if y0l is not None:
         br_values.append(y0l
 )
 
@@ -1015,38 +965,31 @@ def diagnose(params_norm, comps, mask_count, args
     hc = params_norm.get("star_Hc_abs_mean"
 )
 
-    if mask_count < 300
-:
+    if mask_count < 300:
         msgs.append("有效轨迹点偏少，可能是回线过暗、ROI不准或阈值过高。建议降低 threshold 或提高示波器亮度。"
 )
 
-    if area is not None and area < 0.05
-:
+    if area is not None and area < 0.05:
         msgs.append("回线面积较小，可能励磁不足或材料磁滞效应较弱。"
 )
 
-    if br is None
-:
+    if br is None:
         msgs.append("未稳定得到 Br，可能坐标原点不准或回线未覆盖 H=0 位置。建议使用 --origin 手动标定原点。"
 )
 
-    if hc is None
-:
+    if hc is None:
         msgs.append("未稳定得到 Hc，可能回线未穿过 B=0 轴或坐标原点不准。"
 )
 
-    if len(comps) > 5
-:
+    if len(comps) > 5:
         msgs.append("提取到多个亮线片段，图像中可能存在反光或噪声。建议固定手机、减少屏幕反光。"
 )
 
-    if args.origin is None
-:
+    if args.origin is None:
         msgs.append("当前默认使用ROI中心作为坐标原点。若示波器零点未居中，Br/Hc会有系统偏差，建议使用 --origin x,y 手动标定。"
 )
 
-    if not msgs
-:
+    if not msgs:
         msgs.append("回线提取和分支重建正常，可用于后续磁学参数分析。"
 )
 
@@ -1105,8 +1048,7 @@ items():
 items():
         lines.append(f"- {k}: {v}"
 )
-    if "physical" in params
-:
+    if "physical" in params:
         lines.append(""
 )
         lines.append("## 5. 物理量参数"
@@ -1119,8 +1061,7 @@ items():
 )
     lines.append("## 6. 实验状态诊断"
 )
-    for m in diagnostics
-:
+    for m in diagnostics:
         lines.append(f"- {m}"
 )
     lines.append(""
@@ -1193,8 +1134,7 @@ parse_args()
 
     img = imread_unicode(args.
 image)
-    if img is None
-:
+    if img is None:
         raise FileNotFoundError(f"无法读取图片：{args.image}"
 )
 
@@ -1205,12 +1145,10 @@ stem
 
     roi_given = parse_roi(args.
 roi)
-    if roi_given is None
-:
+    if roi_given is None:
         x1, y1, x2, y2 = auto_crop_scope_screen(img
 )
-    else
-:
+    else:
         x1, y1, x2, y2 = roi_given
 
     H_img, W_img = img.shape[:2
@@ -1226,8 +1164,7 @@ roi)
 
     roi = img[y1:y2, x1:x2].
 copy()
-    if roi.size == 0
-:
+    if roi.size == 0:
         raise RuntimeError("ROI裁剪为空，请检查 --roi。"
 )
 
@@ -1241,16 +1178,14 @@ min_area)
     mask_count = int(cv2.countNonZero(mask
 ))
 
-    if mask_count < 50
-:
+    if mask_count < 50:
         # 自动再尝试更低阈值
         mask, score, comps = extract_trace_mask(roi, threshold=12, min_area=max(10, args.min_area // 3
 ))
         mask_count = int(cv2.countNonZero(mask
 ))
 
-    if mask_count < 50
-:
+    if mask_count < 50:
         raise RuntimeError("仍未提取到足够回线点：请手动调 ROI，或使用 --threshold 10，或提高照片中回线亮度。"
 )
 
@@ -1286,11 +1221,9 @@ DataFrame({
         "U_B_V": UB
 ,
     })
-    if H_phys is not None
-:
+    if H_phys is not None:
         df["H_A_per_m"] = H_phys
-    if B_phys is not None
-:
+    if B_phys is not None:
         df["B_T"] = B_phys
 
     df.to_csv(Path(args.outdir) / f"{stem}_raw_points.csv", index=False, encoding="utf-8-sig"
@@ -1364,8 +1297,7 @@ nan
 
     # 物理坐标重建
     params_phys = None
-    if H_phys is not None and B_phys is not None
-:
+    if H_phys is not None and B_phys is not None:
         x_p, low_p, up_p = reconstruct_branches
 (
             H_phys, B_phys, bins=args.bins, smooth_window=args.
@@ -1409,12 +1341,10 @@ image,
 ,
         "diagnostics": diagnostics
     }
-    if params_phys is not None
-:
+    if params_phys is not None:
         result["physical"] = params_phys
 
-    with open(Path(args.outdir) / f"{stem}_result.json", "w", encoding="utf-8") as f
-:
+    with open(Path(args.outdir) / f"{stem}_result.json", "w", encoding="utf-8") as f:
         json.dump(make_json_safe(result), f, ensure_ascii=False, indent=2
 )
 
@@ -1441,8 +1371,7 @@ items():
 items():
         print(f"{k}: {v}"
 )
-    if params_phys is not None
-:
+    if params_phys is not None:
         print("\n--- 物理量参数 ---"
 )
         for k, v in params_phys.
@@ -1451,13 +1380,11 @@ items():
 )
     print("\n--- 诊断建议 ---"
 )
-    for m in diagnostics
-:
+    for m in diagnostics:
         print("- " + m
 )
 
 
-if __name__ == "__main__"
-:
+if __name__ == "__main__":
     main
 ()

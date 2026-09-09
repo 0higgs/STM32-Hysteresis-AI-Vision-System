@@ -1,69 +1,89 @@
-# 智眼识磁：STM32 磁滞回线生成、采集与 AI 视觉分析平台
+# 智眼识磁
 
-从 STM32F407 双 DAC 生成磁滞回线、手机有线 ADB 同步拍照，到人工标注训练 TensorFlow U-Net，并在 Web 中自动提取回线与关键特征点的一体化项目。
+## 磁滞回线智能视觉分析系统 V1.0
 
-## 项目亮点
+**智眼识磁**是面向示波器 X-Y 磁滞回线实验的软硬件协同系统：STM32F407 双 DAC 回线发生、Windows 参数表控制与 Android 有线 ADB 拍摄、LabelMe 标注与 TensorFlow U-Net 分割、网格视觉测量和 Streamlit 教学分析，构成一条可复现实验流程。
 
-- **可编程磁滞回线发生器**：STM32F407 通过 `PA5/DAC2 -> X`、`PA4/DAC1 -> Y` 输出回线；JDY-34 蓝牙串口接收整组参数并实时更新。
-- **自动化数据采集**：Windows 上位机按 CSV/XLSX 参数表逐行下发；等待示波器稳定后，以有线 ADB 触发 Android 手机拍照、回传图像、按 `sample_id` 命名并维护采集清单，支持重试和断点续拍。
-- **本地 AI 模型**：使用 LabelMe 人工曲线标注训练 TensorFlow U-Net。模型分割磁滞轨迹而非依赖 HSV 颜色阈值；清洁留出验证集 Dice 为 `0.880`（9 张验证图，属原型验证结果）。
-- **逐图网格校正**：U-Net 分割曲线后，从当前照片检测网格和零轴，减少手机轻微平移导致特征点整体错位。
-- **智眼识磁 Web**：显示曲线掩膜、自动特征点、Hc/Br/饱和端点、偏移、归一化曲线，以及学习、指导、考核三类交互模式。
+版本：`V1.0.0`。本仓库为软件著作权登记与正式发布准备的工程基线；权属和开放许可仍须全体项目著作权人书面确认。
 
-## 系统流程
+## 系统架构
 
 ```text
-参数 CSV/XLSX -> Windows 上位机 -> JDY-34 -> STM32 双 DAC -> 示波器 X-Y
-                                                        |
-                                             手机有线 ADB 自动拍照
-                                                        |
-参数真值表 + LabelMe 标注 -> U-Net 训练 -> 曲线分割 -> 网格测量 -> Web 分析
+参数表 CSV/XLSX
+  -> Windows 上位机 -> JDY-34 蓝牙串口 -> STM32F407 -> DAC2(X) / DAC1(Y)
+  -> 示波器 X-Y 显示 -> Android 手机 ADB 拍摄 -> 图像与 manifest
+  -> LabelMe 标注 -> TensorFlow U-Net -> 网格检测与特征测量 -> Web 分析/教学反馈
 ```
+
+## 功能模块
+
+| 模块 | 作用 |
+| --- | --- |
+| A. STM32 可编程发生器 | 生成并通过双 DAC 输出可调磁滞回线；接收蓝牙参数协议。 |
+| B. Windows 自动采集端 | 导入参数表、串口下发、等待稳定、ADB 拍摄、断点续拍、重试及 manifest 记录。 |
+| C. AI 视觉测量 | LabelMe 曲线监督、TensorFlow U-Net 分割、逐图网格检测、Hc/Br/饱和端点测量。 |
+| D. Web 教学与分析 | Streamlit 交互式上传、分割结果、关键点复核、回线和教学反馈展示。 |
+
+## 快速开始
+
+### Web 分析平台
+
+```powershell
+cd STM32-Hysteresis-AI-Vision-System
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
+```
+
+本地 U-Net 不需要云端密钥。可选的云端教学反馈使用 `DASHSCOPE_API_KEY` 环境变量，或只在本机 `.streamlit/secrets.toml` 配置；该文件不会被提交。
+
+### Windows 上位机
+
+```powershell
+cd desktop_capture
+python -m pip install -r requirements.txt
+python main.py
+```
+
+上位机按 `ADB_PATH` 环境变量、系统 `PATH`、Android SDK 常规路径的顺序寻找 adb；仍未找到时可在界面中手动选择 `adb.exe`。详见 [desktop_capture/README.md](desktop_capture/README.md)。
+
+### STM32 固件
+
+Keil 工程为 `firmware/Projects/MDK-ARM/atk_f407.uvprojx`，发布镜像为 `release/firmware/hysteresis_v1.hex`。详见 [firmware/README.md](firmware/README.md)。
+
+## AI 训练与数据集
+
+原始 500 张 JPG 约 1 GB，不进入普通 Git 历史。将它们按 `sample_id` 放在本机 `dataset/images/`，再按 [ai_pipeline/README.md](ai_pipeline/README.md) 执行 LabelMe 转换、TensorFlow 训练和预测。仓库保留 metadata、人工标注、标定文件、训练脚本、部署模型和少量验证预览。
+
+部署模型为 `models/hysteresis_unet_v1.keras`。V1.0 整理过程没有重新训练或改动权重。清洁留出集的 Dice 记录为 `0.880`（9 张验证图），仅是当前原型实验记录，不应解释为大规模泛化性能结论。
 
 ## 目录结构
 
-| 路径 | 内容 |
-| --- | --- |
-| `firmware/` | STM32F407 Keil 工程、HAL/CMSIS、DAC 磁滞模型与蓝牙协议 |
-| `desktop_capture/` | Windows 控制端、ADB 相机控制、500 组参数表与断点续拍逻辑 |
-| `ai_pipeline/` | 数据转换、LabelMe 预处理、U-Net 训练、批量推理、网格特征和可识别性评估 |
-| `data/metadata/` | 500 张图片的参数真值表与采集清单 |
-| `data/labelme_annotations/` | 人工曲线标注 JSON 与标签定义 |
-| `models/` | 直接部署的 `hysteresis_unet_v1.keras` |
-| `evaluation/` | 训练历史、批量预测表与可视化示例 |
-| `ai_model/` | Streamlit 使用的 U-Net 推理与逐图网格检测模块 |
-| `app_fixed.py` | Web 应用入口 |
-
-## 快速启动 Web 应用
-
-```powershell
-cd ai_hysteresis_system
-D:\ProgramFiles\anaconda3\python.exe -m pip install -r requirements.txt
-D:\ProgramFiles\anaconda3\python.exe -m streamlit run app_fixed.py
+```text
+app.py                  # 唯一正式 Streamlit 入口
+analyzer.py             # 兼容性保留的早期独立分析程序
+ai_model/               # 部署侧 U-Net 推理与网格测量
+ai_pipeline/            # 数据准备、TensorFlow 训练、评估脚本
+desktop_capture/        # Windows 串口/ADB 自动采集程序
+firmware/               # STM32 工程；Drivers/Middlewares 为第三方依赖
+models/                 # 正式部署模型
+data/                   # metadata、LabelMe 标注与数据说明
+evaluation/             # 训练记录和少量预览
+docs/                   # 架构、用户手册、协议、科学边界和软著材料
+legacy/                 # 旧版 Web、视觉实验、PyTorch 训练和历史图片
+release/firmware/       # 单一发布固件镜像
 ```
-
-上传固定相机、固定示波器位置拍摄的照片后，点击 **“已训练 U-Net 自动标定（推荐）”**。
-
-页面中的关键点：白色为原点和一格标尺；红色为 `Hc−/Hc+`；蓝色为 `Br+/Br−`；紫色为正负饱和端点（右上、左下）。若 U-Net 结果与荧光轨迹不符，请使用人工标定或传统视觉回退。
-
-## 数据集说明
-
-原始 500 张 JPG 约 1GB，未放入普通 Git 历史，避免仓库膨胀和 GitHub 限制。仓库保留可复现数据资产：采集清单、参数真值、标签定义、人工标注、标定文件、训练和预测脚本。
-
-需要重新训练时，将原图按 `sample_id` 放入本地 `dataset/images/`，并参考 `data/metadata/` 和 `ai_pipeline/`。原始图像请放在网盘或发布版本附件中，而不是常规 Git 提交。
 
 ## 科学边界
 
-- 默认示波器档位为 X/Y 均 `0.5 V/div`。未填写真实线圈、电阻、电容、磁路与截面积等标定信息时，Web 仅显示可靠的格数和通道电压，不会沿用旧默认物理参数伪造 A/m、T。
-- `LOOP_HZ` 不能由一张静态照片推断，需来自 STM32 通信记录或视频时间信息。
-- 当前固件对一部分物理量归一化显示，因此 `HMAX`、`BS` 等绝对参数不能只凭静态照片唯一恢复；`parameters.csv` 是采集真值和模型评估标签，不能作为未知图像推理时的输入。
+- 静态图像不能推断 `LOOP_HZ`，必须来自 STM32 通信记录或视频时间信息。
+- 没有真实线圈、电阻、电容、磁路、截面积等物理标定时，只报告可靠格数/通道电压，不能伪造 A/m、T。
+- 部分固件参数被归一化到显示轨迹，`HMAX`、`BS` 等绝对量不能由未知单张静态图唯一恢复。
+- `data/metadata/parameters.csv` 是采集真值与研究标签，不是未知图像推理输入。
 
-## 云端教学功能（可选）
+详见 [docs/SCIENTIFIC_LIMITATIONS.md](docs/SCIENTIFIC_LIMITATIONS.md)。
 
-本地 U-Net 推理不需要密钥。若启用云端教学反馈，在 `.streamlit/secrets.toml` 中配置：
+## 第三方依赖、软著与许可
 
-```toml
-DASHSCOPE_API_KEY = "your-new-key"
-```
+TensorFlow、OpenCV、Streamlit、STM32 HAL/CMSIS、ADB 和 LabelMe 等是依赖，不是本项目原创代码。原创范围包括实验控制、磁滞模型与协议、采集恢复、视觉测量、模型训练/部署衔接和交互系统。详见 [THIRD_PARTY.md](THIRD_PARTY.md) 与 [docs/soft_copyright/source_code_selection.md](docs/soft_copyright/source_code_selection.md)。
 
-密钥不应写入源代码或提交到 Git。
+暂未授予开源许可。参见 [COPYRIGHT.md](COPYRIGHT.md)；正式 LICENSE 与著作权人姓名必须由三名共同著作权人确认后再定。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import queue
 import csv
 from pathlib import Path
@@ -47,6 +48,25 @@ PARAM_INFO = {
 }
 
 
+def resolve_adb_path() -> str:
+    """Return the most portable ADB default without requiring a local path.
+
+    Resolution order is an explicit ``ADB_PATH`` environment variable, then an
+    ``adb`` executable on PATH, then the conventional Android Platform Tools
+    install location.  The last fallback remains editable in the user interface.
+    """
+    configured = os.environ.get("ADB_PATH", "").strip()
+    if configured:
+        return configured
+    from_path = shutil.which("adb")
+    if from_path:
+        return from_path
+    conventional = Path(os.environ.get("LOCALAPPDATA", "")) / "Android" / "Sdk" / "platform-tools" / "adb.exe"
+    if conventional.is_file():
+        return str(conventional)
+    return "adb"
+
+
 def build_apply_commands(values: dict[str, float]) -> list[str]:
     """Build a transition that remains valid after every legacy SET command.
 
@@ -80,7 +100,7 @@ def build_setall_command(values: dict[str, float]) -> str:
 class HysteresisUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("STM32F407 磁滞回线控制台")
+        self.title("智眼识磁 V1.0 — STM32F407 磁滞回线控制台")
         self.geometry("1260x850")
         self.minsize(1120, 760)
         self.ser = None
@@ -113,8 +133,7 @@ class HysteresisUI(tk.Tk):
         self.table_file = tk.StringVar(value="未加载参数表")
         self.table_position = tk.StringVar(value="0 / 0")
         self.table_current = tk.StringVar(value="当前参数：—")
-        bundled_adb = Path(r"D:\Program Files\platform-tools\adb.exe")
-        self.adb_path = tk.StringVar(value=shutil.which("adb") or (str(bundled_adb) if bundled_adb.exists() else "adb"))
+        self.adb_path = tk.StringVar(value=resolve_adb_path())
         self.adb_device = tk.StringVar()
         self.adb_devices: dict[str, str] = {}
         self.capture_output = tk.StringVar(value=str(Path.cwd() / "dataset"))

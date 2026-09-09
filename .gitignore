@@ -1,12 +1,42 @@
+# Python and local tooling
 __pycache__/
-.streamlit/secrets.toml
 *.py[cod]
-*.zip
 *.log
+*.tmp
+*.bak
+*.swp
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+.idea/
+
+# Secrets and local configuration
+.streamlit/secrets.toml
+.env
+.env.*
+
+# Large local datasets and generated training artifacts
 dataset/images/
+dataset/raw/
 dataset/roboflow_upload_v1/images/
 dataset/segmentation_v1/images/
 dataset/segmentation_v1/masks/
 data/raw_images/
-data/**/*.jpg
-data/**/*.png
+outputs/
+runs/
+checkpoints/
+
+# Keil build outputs; the reviewed release image is release/firmware/hysteresis_v1.hex
+firmware/Output/
+*.axf
+*.hex
+*.bin
+*.map
+*.o
+*.obj
+*.d
+*.dep
+
+# Machine-generated spreadsheet inspection output
+*.inspect.ndjson
