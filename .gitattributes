@@ -1,0 +1,21 @@
+# ==================================================
+# GitHub Linguist configuration
+# ==================================================
+
+# STMicroelectronics / STM32 third-party dependencies.
+# Keep them in the repository so the Keil project remains reproducible, but do
+# not treat them as the project's primary implementation language.
+firmware/Drivers/** linguist-vendored
+firmware/Middlewares/** linguist-vendored
+
+# Keil build output and generated project configuration.
+firmware/Output/** linguist-generated
+firmware/Projects/**/*.uvprojx linguist-generated
+firmware/Projects/**/*.uvoptx linguist-generated
+firmware/Projects/**/*.uvguix.* linguist-generated
+firmware/Projects/**/*.dbgconf linguist-generated
+*.map linguist-generated
+*.lst linguist-generated
+
+# Project-authored STM32 logic must remain visible in language statistics.
+firmware/User/** -linguist-vendored -linguist-generated
