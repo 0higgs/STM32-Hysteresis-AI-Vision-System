@@ -19,3 +19,7 @@ firmware/Projects/**/*.dbgconf linguist-generated
 
 # Project-authored STM32 logic must remain visible in language statistics.
 firmware/User/** -linguist-vendored -linguist-generated
+
+# Generated firmware resource data
+firmware/User/animations/cat_wave_animation_data.c linguist-generated=true
+firmware/User/graphics/hanzi_ui_data.c linguist-generated=true
