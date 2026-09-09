@@ -1,0 +1,16 @@
+{
+  "description": "Fill only with the actual, fixed instrument values used during image capture. Do not substitute image-derived or guessed values.",
+  "x_volts_per_div": null,
+  "y_volts_per_div": null,
+  "sample_resistor_R1_ohm": null,
+  "excitation_turns_N1": null,
+  "magnetic_path_length_m": null,
+  "integrator_resistor_R2_ohm": null,
+  "integrator_capacitor_C_F": null,
+  "pickup_turns_N2": null,
+  "core_area_S_m2": null,
+  "formulas": {
+    "H_A_per_m": "grid_x_div * x_volts_per_div * N1 / (L_m * R1_ohm)",
+    "B_T": "grid_y_div * y_volts_per_div * (R2_ohm * C_F) / (N2 * S_m2)"
+  }
+}

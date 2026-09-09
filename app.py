@@ -4,6 +4,7 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 import json
 import base64
 import io
+import os
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -267,7 +268,7 @@ if uploaded_file is not None:
             with st.spinner("Qwen-VL 正在审阅数据..."):
                 try:
                     client = OpenAI(
-                        api_key="sk-ws-H.EDRMLHM.TfUd.MEUCIDHQ5iXFJhzN3SaixunpWQq_9XewZjCAFpmqZW139muwAiEAvR4MsYCMwORHfx00j9reLpV7u2XdBGtF9N5fgVpNLDY",
+                        api_key=os.getenv("DASHSCOPE_API_KEY", ""),
                         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
                     )
                     base64_image = encode_image(display_image)

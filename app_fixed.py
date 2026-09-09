@@ -3,6 +3,7 @@ import hashlib
 import html
 import io
 import json
+import os
 import re
 import time
 
@@ -16,6 +17,7 @@ from PIL import Image, ImageDraw
 from scipy.interpolate import PchipInterpolator
 from scipy.signal import find_peaks
 from streamlit_image_coordinates import streamlit_image_coordinates
+from ai_model.unet_measurement import UNetLoopMeasurer
 
 
 st.set_page_config(page_title="智眼识磁系统", layout="wide", initial_sidebar_state="expanded")
@@ -26,13 +28,17 @@ st.markdown(
 )
 
 
-# 保留原 app.py 中的 API 配置，避免影响现有部署方式。
-AI_API_KEY = "sk-ws-H.EDRMLHM.TfUd.MEUCIDHQ5iXFJhzN3SaixunpWQq_9XewZjCAFpmqZW139muwAiEAvR4MsYCMwORHfx00j9reLpV7u2XdBGtF9N5fgVpNLDY"
+# Never commit a cloud credential.  A missing secrets.toml must not prevent the
+# local U-Net measurement feature from starting.
+try:
+    AI_API_KEY = st.secrets.get("DASHSCOPE_API_KEY", os.getenv("DASHSCOPE_API_KEY", ""))
+except Exception:
+    AI_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 AI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 AI_MODEL = "qwen-vl-max"
 
 
-STATE_SCHEMA_VERSION = 6
+STATE_SCHEMA_VERSION = 7
 if st.session_state.get("state_schema_version") != STATE_SCHEMA_VERSION:
     for stale_key in [
         "clicks", "aux_branches", "upload_digest", "ai_measurement_meta",
@@ -41,6 +47,7 @@ if st.session_state.get("state_schema_version") != STATE_SCHEMA_VERSION:
         "guidance_result", "guidance_history", "assessment_active",
         "assessment_start_time", "assessment_end_time", "assessment_adjustments",
         "assessment_result", "assessment_last_upload",
+        "unet_result",
     ]:
         st.session_state.pop(stale_key, None)
     st.session_state["state_schema_version"] = STATE_SCHEMA_VERSION
@@ -64,6 +71,7 @@ STATE_DEFAULTS = {
     "assessment_adjustments": 0,
     "assessment_result": None,
     "assessment_last_upload": None,
+    "unet_result": None,
 }
 for state_key, default_value in STATE_DEFAULTS.items():
     if state_key not in st.session_state:
@@ -71,7 +79,28 @@ for state_key, default_value in STATE_DEFAULTS.items():
 
 
 def get_ai_client():
+    if not AI_API_KEY:
+        raise RuntimeError("未配置 DASHSCOPE_API_KEY；本地 U-Net 测量仍可使用，AI 教学反馈暂不可用。")
     return OpenAI(api_key=AI_API_KEY, base_url=AI_BASE_URL, timeout=45.0, max_retries=1)
+
+
+@st.cache_resource(show_spinner=False)
+def get_unet_measurer():
+    """Cache the locally trained TensorFlow model for the whole Streamlit process."""
+    return UNetLoopMeasurer()
+
+
+def fixed_crop_points_to_display(point_map, original_size, display_size):
+    """Map 640x600 U-Net crop points to the resized image used for clicking."""
+    left, top, right, bottom = UNetLoopMeasurer.ROI
+    sx = display_size[0] / original_size[0]
+    sy = display_size[1] / original_size[1]
+    mapped = {}
+    for name, (x, y) in point_map.items():
+        source_x = left + float(x) / UNetLoopMeasurer.TARGET_SIZE[0] * (right - left)
+        source_y = top + float(y) / UNetLoopMeasurer.TARGET_SIZE[1] * (bottom - top)
+        mapped[name] = (int(round(source_x * sx)), int(round(source_y * sy)))
+    return mapped
 
 
 def encode_image(pil_img):
@@ -373,6 +402,7 @@ def reset_measurement_state():
     st.session_state["learning_task"] = None
     st.session_state["learning_submitted"] = False
     st.session_state["guidance_result"] = None
+    st.session_state["unet_result"] = None
     st.session_state["img_key_counter"] += 1
 
 
@@ -433,31 +463,32 @@ if experiment_mode == "考核模式":
 
 st.sidebar.divider()
 st.sidebar.header("⚙️ 实验仪参数录入")
-st.sidebar.markdown("系统同时计算真实 B-H 物理量、示波器电压量和无量纲归一化量。")
+st.sidebar.markdown("先从示波器图像测得格数/电压；只有填入真实电路标定后才换算 B-H 物理量。")
 
 st.sidebar.subheader("🔌 示波器读取参数")
-x_volts = st.sidebar.number_input("X 轴档位 Sx (V/div)", min_value=0.001, value=0.20, step=0.05)
-y_volts = st.sidebar.number_input("Y 轴档位 Sy (V/div)", min_value=0.001, value=0.05, step=0.01)
+x_volts = st.sidebar.number_input("X 轴档位 Sx (V/div)", min_value=0.001, value=0.50, step=0.05)
+y_volts = st.sidebar.number_input("Y 轴档位 Sy (V/div)", min_value=0.001, value=0.50, step=0.05)
 
-st.sidebar.subheader("📐 实验仪硬件参数")
-R1 = st.sidebar.number_input("取样电阻 R1 (Ω)", min_value=0.001, value=1.0, step=0.5)
-N1 = st.sidebar.number_input("励磁线圈匝数 N1", min_value=1, value=50, step=10)
-L_mm = st.sidebar.number_input("磁路长度 L (mm)", min_value=0.001, value=60.0, step=1.0)
-R2 = st.sidebar.number_input("积分电阻 R2 (kΩ)", min_value=0.001, value=10.0, step=1.0)
-C_uF = st.sidebar.number_input("积分电容 C (μF)", min_value=0.001, value=10.0, step=1.0)
-N2 = st.sidebar.number_input("感应线圈匝数 N2", min_value=1, value=150, step=10)
-S_mm2 = st.sidebar.number_input("截面积 S (mm²)", min_value=0.001, value=80.0, step=1.0)
-
-L_m = L_mm / 1000.0
-S_m2 = S_mm2 / 1.0e6
-R2_ohm = R2 * 1000.0
-C_F = C_uF * 1.0e-6
-Kx = N1 / (L_m * R1)
-Ky = (R2_ohm * C_F) / (N2 * S_m2)
-
-st.sidebar.markdown(
-    f"**计算系数：**\n\n- $K_x = {Kx:.2f}$ `A/(V·m)`\n- $K_y = {Ky:.3f}$ `T/V`"
+physical_calibration_enabled = st.sidebar.checkbox(
+    "已完成真实电路参数标定（才计算 A/m、T）", value=False,
+    help="未勾选时，系统只报告可靠的格数和通道电压；不会使用旧项目的默认电路参数。",
 )
+
+if physical_calibration_enabled:
+    st.sidebar.subheader("📐 已标定的实验仪硬件参数")
+    R1 = st.sidebar.number_input("取样电阻 R1 (Ω)", min_value=0.001, value=1.0, step=0.5)
+    N1 = st.sidebar.number_input("励磁线圈匝数 N1", min_value=1, value=50, step=10)
+    L_mm = st.sidebar.number_input("磁路长度 L (mm)", min_value=0.001, value=60.0, step=1.0)
+    R2 = st.sidebar.number_input("积分电阻 R2 (kΩ)", min_value=0.001, value=10.0, step=1.0)
+    C_uF = st.sidebar.number_input("积分电容 C (μF)", min_value=0.001, value=10.0, step=1.0)
+    N2 = st.sidebar.number_input("感应线圈匝数 N2", min_value=1, value=150, step=10)
+    S_mm2 = st.sidebar.number_input("截面积 S (mm²)", min_value=0.001, value=80.0, step=1.0)
+    Kx = N1 / ((L_mm / 1000.0) * R1)
+    Ky = ((R2 * 1000.0) * (C_uF * 1.0e-6)) / (N2 * (S_mm2 / 1.0e6))
+    st.sidebar.markdown(f"**计算系数：**\n\n- $K_x = {Kx:.2f}$ `A/(V·m)`\n- $K_y = {Ky:.3f}$ `T/V`")
+else:
+    Kx = Ky = 1.0
+    st.sidebar.info("当前为屏幕读数模式：输出格数和 V；需填入真实电路常数后才输出 A/m、T。")
 center_for_display = st.sidebar.checkbox(
     "仅在曲线显示中扣除估计中心偏移",
     value=False,
@@ -588,7 +619,36 @@ if uploaded_file is not None:
 
         ai_col, branch_col = st.columns([1, 1])
         with ai_col:
-            if st.button("🎯 机器视觉自动标定 8 个特征点", use_container_width=True):
+            if st.button("🤖 已训练 U-Net 自动标定（推荐）", use_container_width=True):
+                with st.spinner("正在运行本地 TensorFlow U-Net，分割磁滞回线..."):
+                    try:
+                        result = get_unet_measurer().analyse(original_image)
+                        point_map = fixed_crop_points_to_display(
+                            result["points_in_crop"], original_image.size, analysis_image.size
+                        )
+                        ordered_names = [
+                            "origin", "scale_right", "hc_negative", "hc_positive",
+                            "br_positive", "br_negative", "extreme_positive", "extreme_negative",
+                        ]
+                        st.session_state["clicks"] = [point_map[name] for name in ordered_names]
+                        st.session_state["aux_branches"] = []
+                        st.session_state["recalibrate_index"] = None
+                        st.session_state["unet_result"] = result
+                        st.session_state["ai_measurement_meta"] = {
+                            "source": "trained_unet",
+                            "geometry_validation": "fixed-grid",
+                            "trace_pixels": result["trace_pixels"],
+                            "grid_size_px": result["grid_size_px"],
+                            "confidence": result["mean_probability_on_trace"],
+                            "warnings": ["AI 结果应与原始荧光轨迹复核；图片须来自固定相机与示波器位置。"],
+                        }
+                        st.session_state["ai_diagnostic"] = None
+                        st.session_state["student_feedback"] = None
+                        st.session_state["img_key_counter"] += 1
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"U-Net 自动标定失败：{exc}。可使用传统视觉或人工标定。")
+            if st.button("🎯 传统视觉自动标定（回退）", use_container_width=True):
                 with st.spinner("正在检测示波器屏幕、网格和荧光磁滞回线..."):
                     try:
                         point_map, suggestion = detect_core_points_cv(analysis_image)
@@ -601,6 +661,7 @@ if uploaded_file is not None:
                         st.session_state["clicks"] = converted
                         st.session_state["aux_branches"] = []
                         st.session_state["recalibrate_index"] = None
+                        st.session_state["unet_result"] = None
                         st.session_state["ai_measurement_meta"] = suggestion
                         st.session_state["ai_diagnostic"] = None
                         st.session_state["student_feedback"] = None
@@ -619,6 +680,13 @@ if uploaded_file is not None:
 
         meta = st.session_state.get("ai_measurement_meta")
         if meta:
+            if meta.get("source") == "trained_unet":
+                st.success(
+                    f"U-Net 语义分割完成；轨迹像素：{meta.get('trace_pixels', 0)}；"
+                    f"掩膜内平均置信度：{meta.get('confidence', 0):.3f}。"
+                )
+                st.image(st.session_state["unet_result"]["overlay"], caption="蓝色：已训练 U-Net 识别出的磁滞回线")
+                st.caption("标记说明：紫色为正、负饱和端点（右上/左下）；红色为 Hc−、Hc+；蓝色为 Br+、Br−；白色为原点与一格标尺。")
             st.success(
                 f"机器视觉几何校验：通过；检测轨迹像素：{meta.get('trace_pixels', 0)}；"
                 f"估计网格：{meta.get('grid_size_px', 0):.1f} px/div。"
@@ -749,8 +817,8 @@ if uploaded_file is not None:
         if aux_lower:
             fig.add_trace(go.Scatter(x=[p[0] for p in aux_lower], y=[p[1] for p in aux_lower], mode="markers", marker=dict(color="orange", symbol="cross", size=9), name="下分支辅助点"))
 
-        unit_h, unit_b = ("H/Hm", "B/Bm") if normalized else ("H (A/m)", "B (T)")
-        title = "无量纲磁滞回线" if normalized else "保留正负方向的 B-H 磁滞回线"
+        unit_h, unit_b = ("H/Hm", "B/Bm") if normalized else (("H (A/m)", "B (T)") if physical_calibration_enabled else ("X channel (V)", "Y channel (V)"))
+        title = "无量纲磁滞回线" if normalized else ("保留正负方向的 B-H 磁滞回线" if physical_calibration_enabled else "示波器通道电压回线（未使用旧默认电路参数）")
         if center_for_display:
             title += "（仅显示时扣除估计中心偏移）"
         fig.update_layout(
@@ -771,12 +839,13 @@ if uploaded_file is not None:
         elif is_ready and pixels_per_div > 1.0:
             st.plotly_chart(plot_loop(normalized=False), use_container_width=True)
             metric_cols = st.columns(4)
-            metric_cols[0].metric("Hc-", f"{h_c_neg:.2f} A/m")
-            metric_cols[1].metric("Hc+", f"{h_c_pos:.2f} A/m")
-            metric_cols[2].metric("Br+", f"{b_r_pos:.4f} T")
-            metric_cols[3].metric("Br-", f"{b_r_neg:.4f} T")
+            h_unit, b_unit = ("A/m", "T") if physical_calibration_enabled else ("V", "V")
+            metric_cols[0].metric("Hc-", f"{h_c_neg:.2f} {h_unit}")
+            metric_cols[1].metric("Hc+", f"{h_c_pos:.2f} {h_unit}")
+            metric_cols[2].metric("Br+", f"{b_r_pos:.4f} {b_unit}")
+            metric_cols[3].metric("Br-", f"{b_r_neg:.4f} {b_unit}")
             st.caption(
-                f"估计水平中心偏移 H_bias={h_bias:.2f} A/m；垂直中心偏移 B_bias={b_bias:.4f} T。"
+                f"估计水平中心偏移 H_bias={h_bias:.2f} {h_unit}；垂直中心偏移 B_bias={b_bias:.4f} {b_unit}。"
                 "这些量不会被自动删除，可用于判断仪器零偏或真实物理不对称。"
             )
         else:

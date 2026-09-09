@@ -1,0 +1,12 @@
+__pycache__/
+.streamlit/secrets.toml
+*.py[cod]
+*.zip
+*.log
+dataset/images/
+dataset/roboflow_upload_v1/images/
+dataset/segmentation_v1/images/
+dataset/segmentation_v1/masks/
+data/raw_images/
+data/**/*.jpg
+data/**/*.png

@@ -1,0 +1,25 @@
+﻿subset,target,samples,cv_r2,mae,rmse,mae_over_range,rmse_over_range,assessment
+all_500,AMPLITUDE,500,0.879385,72.816115,114.447671,0.044727,0.070300,visually predictable
+all_500,Y_GAIN,500,0.746616,0.083965,0.127222,0.055331,0.083837,visually predictable
+all_500,X_GAIN,500,0.695283,0.093266,0.148660,0.060807,0.096923,weak / conditional
+all_500,X_OFFSET,500,0.647730,0.044800,0.095780,0.029138,0.062296,weak / conditional
+all_500,Y_OFFSET,500,0.437629,0.058922,0.121802,0.039299,0.081239,weak / conditional
+all_500,BR,500,0.395875,0.179088,0.226420,0.135069,0.170767,weak / conditional
+all_500,XY_COUPLING,500,0.152961,0.051963,0.094811,0.056759,0.103561,not reliably identifiable
+all_500,ASYMMETRY,500,0.055481,0.034148,0.064512,0.061683,0.116532,not reliably identifiable
+all_500,HMAX,500,-0.019879,89.046689,108.097499,0.237954,0.288862,not reliably identifiable
+all_500,HC,500,-0.035961,16.749611,20.002223,0.243865,0.291221,not reliably identifiable
+all_500,BS,500,-0.095151,0.288690,0.337821,0.262924,0.307669,not reliably identifiable
+all_500,LOOP_HZ,500,-0.171994,23.968357,28.424021,0.266846,0.316452,not reliably identifiable
+normal_only,BR,100,0.530017,0.158132,0.200949,0.138336,0.175793,weak / conditional
+normal_only,X_OFFSET,100,0.153532,0.025848,0.031385,0.216661,0.263074,not reliably identifiable
+normal_only,AMPLITUDE,100,0.104556,61.808708,76.057395,0.216873,0.266868,not reliably identifiable
+normal_only,HC,100,0.061258,15.972982,19.009627,0.234273,0.278811,not reliably identifiable
+normal_only,Y_GAIN,100,0.012568,0.050536,0.059894,0.260092,0.308257,not reliably identifiable
+normal_only,HMAX,100,0.002051,90.125567,108.762569,0.244394,0.294933,not reliably identifiable
+normal_only,BS,100,-0.008348,0.284458,0.329248,0.263119,0.304549,not reliably identifiable
+normal_only,Y_OFFSET,100,-0.125849,0.030846,0.035568,0.260745,0.300663,not reliably identifiable
+normal_only,X_GAIN,100,-0.136454,0.048642,0.059046,0.252292,0.306254,not reliably identifiable
+normal_only,XY_COUPLING,100,-0.140172,0.020193,0.023479,0.257232,0.299100,not reliably identifiable
+normal_only,ASYMMETRY,100,-0.268934,0.013807,0.016281,0.276147,0.325621,not reliably identifiable
+normal_only,LOOP_HZ,100,-0.333513,26.005584,29.597025,0.290812,0.330974,not reliably identifiable

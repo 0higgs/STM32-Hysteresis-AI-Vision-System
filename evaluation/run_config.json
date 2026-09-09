@@ -1,0 +1,12 @@
+{
+  "epochs": 20,
+  "batch_size": 1,
+  "learning_rate": 0.0003,
+  "train_count": 36,
+  "valid_count": 9,
+  "input_shape": [
+    600,
+    640,
+    3
+  ]
+}
