@@ -8,6 +8,7 @@
 - 训练/验证划分扩展为 110/26，并纳入全部 9 类拍摄条件。
 - 统一训练数据路径为 `python/images/` 与 `python/dataset/labelme/annotations/`。
 - 更新部署 ROI、网格标定、模型元数据和 README 指标口径。
+- 恢复 `UNetLoopMeasurer.ROI/TARGET_SIZE` 类级兼容接口，修复 Streamlit 自动标定启动失败。
 
 ## V1.0.0
 

@@ -15,25 +15,29 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL = ROOT / "models" / "hysteresis_unet_v1.keras"
 GRID = ROOT / "ai_model" / "fixed_screen_grid.json"
 MODEL_METADATA = ROOT / "ai_model" / "model_metadata.json"
+MODEL_CONFIG = json.loads(MODEL_METADATA.read_text(encoding="utf-8"))
 
 
 class UNetLoopMeasurer:
     """Lazy-loadable local TensorFlow model for the fixed acquisition setup."""
+
+    # Keep the geometry available on both the class and its instances.  The
+    # Streamlit coordinate mapper reads these attributes before inference,
+    # while their values still come from the deployed model metadata.
+    ROI = tuple(MODEL_CONFIG["source_roi_xyxy"])
+    TARGET_SIZE = tuple(MODEL_CONFIG["target_size_wh"])
 
     def __init__(self) -> None:
         import tensorflow as tf
 
         if not MODEL.is_file():
             raise FileNotFoundError(f"Missing trained model: {MODEL}")
-        metadata = json.loads(MODEL_METADATA.read_text(encoding="utf-8"))
-        self.ROI = tuple(metadata["source_roi_xyxy"])
-        self.TARGET_SIZE = tuple(metadata["target_size_wh"])
         grid = json.loads(GRID.read_text(encoding="utf-8"))
         xs = np.asarray(grid["vertical_grid_candidates_x"], dtype=float)
         ys = np.asarray(grid["horizontal_grid_candidates_y"], dtype=float)
         # These are only fallbacks. The actual origin/grid is detected per photo
         # because small camera translations make a fixed origin visibly wrong.
-        self.x0, self.y0 = map(float, metadata["grid_origin_reference_px"])
+        self.x0, self.y0 = map(float, MODEL_CONFIG["grid_origin_reference_px"])
         self.x_div = float(np.median(np.diff(xs)))
         self.y_div = float(np.median(np.diff(ys)))
         self.model = tf.keras.models.load_model(MODEL, compile=False)
