@@ -15,9 +15,9 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "dataset" / "roboflow_upload_v1" / "images"
-CONFIG = ROOT / "dataset" / "segmentation_v1" / "dataset_config.json"
-OUT = ROOT / "calibration" / "fixed_screen_v1"
+SOURCE = ROOT / "python" / "images"
+CONFIG = ROOT / "python" / "dataset" / "segmentation_v1" / "dataset_config.json"
+OUT = ROOT / "ai_pipeline" / "calibration"
 
 
 def fit_grid_lattice(signal: np.ndarray, min_spacing: float, max_spacing: float) -> list[float]:

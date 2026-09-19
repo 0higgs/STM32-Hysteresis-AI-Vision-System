@@ -13,9 +13,9 @@ import tensorflow as tf
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "dataset" / "roboflow_upload_v1" / "images"
-DATASET = ROOT / "dataset" / "segmentation_v1"
-MODEL = ROOT / "runs" / "unet_v1_tensorflow" / "best.keras"
+SOURCE = ROOT / "python" / "images"
+DATASET = ROOT / "python" / "dataset" / "segmentation_v1"
+MODEL = ROOT / "models" / "hysteresis_unet_v1.keras"
 OUTPUT = ROOT / "predictions" / "unet_v1"
 
 

@@ -1,12 +1,21 @@
 {
-  "epochs": 20,
+  "created_at_utc": "2026-09-19T09:28:09.217820+00:00",
+  "tensorflow_version": "2.20.0",
+  "device": "CPU",
+  "epochs_requested": 30,
   "batch_size": 1,
   "learning_rate": 0.0003,
-  "train_count": 36,
-  "valid_count": 9,
+  "seed": 20260814,
+  "train_count": 110,
+  "valid_count": 26,
   "input_shape": [
     600,
     640,
     3
-  ]
+  ],
+  "dataset_source_fingerprint_sha256": "204c994c977c155eeb858a175fe5e38aa386cd0287b9ac310790da7e2a15e77a",
+  "includes_optional_conditions": true,
+  "epochs_completed": 28,
+  "best_epoch": 21,
+  "best_validation_dice": 0.8952008485794067
 }

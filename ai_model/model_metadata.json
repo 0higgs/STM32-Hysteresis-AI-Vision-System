@@ -1,0 +1,19 @@
+{
+  "deployment_model": "models/hysteresis_unet_v1.keras",
+  "model_sha256": "60d8e72c81b1121454ae80741041a2be3b10c53a11c0c1b4ca6a59b5948b960e",
+  "trained_at": "2026-09-19",
+  "tensorflow_version": "2.20.0",
+  "source_annotation_count": 136,
+  "train_count": 110,
+  "validation_count": 26,
+  "source_fingerprint_sha256": "204c994c977c155eeb858a175fe5e38aa386cd0287b9ac310790da7e2a15e77a",
+  "source_roi_xyxy": [1927, 307, 3878, 2191],
+  "target_size_wh": [640, 600],
+  "grid_origin_reference_px": [313.0, 326.0],
+  "threshold": 0.5,
+  "validation_mean_dice": 0.895200808076923,
+  "validation_mean_iou": 0.8116635999999998,
+  "validation_min_dice": 0.8141253,
+  "validation_median_inference_seconds_cpu": 0.20452290000685025,
+  "validation_scope": "stratified held-out split from one acquisition setup; not an independent cross-device test"
+}

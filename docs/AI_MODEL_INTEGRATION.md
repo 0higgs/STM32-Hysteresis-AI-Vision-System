@@ -2,7 +2,7 @@
 
 ## 这次训练已经增加了什么 AI 能力
 
-模型位于 `runs/unet_v1_tensorflow/best.keras`。它不是颜色阈值，而是由人工标注曲线训练出的 TensorFlow U-Net，输入固定相机/示波器位置的照片，输出像素级磁滞回线掩膜。当前清洁标注验证集 Dice 为 `0.880`（9 张验证图），所以应在答辩中如实称为“原型验证结果”，而不是泛化性能结论。
+部署模型位于 `models/hysteresis_unet_v1.keras`。它不是颜色阈值，而是由人工标注曲线训练出的 TensorFlow U-Net，输入固定相机/示波器位置的照片，输出像素级磁滞回线掩膜。2026-09-19 使用最新 136 份标注重训后，110/26 分层留出划分上的平均 Dice 为 `0.8952`、平均 IoU 为 `0.8117`。该结果仍来自同一固定采集装置，应称为“留出验证结果”，不是跨设备泛化结论。
 
 完整链路为：**照片 -> U-Net 语义分割 -> 固定网格几何测量 -> Hc/Br/极值（格数/通道电压） -> 教学解释与人工复核**。
 
@@ -11,19 +11,16 @@
 旧版 `detect_core_points_cv()` 使用 HSV 颜色阈值和连通域。保留它作为“传统视觉基线/失败回退”，但默认使用：
 
 ```python
-from ml.unet_measurement import UNetLoopMeasurer
+from ai_model.unet_measurement import UNetLoopMeasurer
 
 @st.cache_resource
 def get_unet_measurer():
     return UNetLoopMeasurer()
 
 # original_image 是 PIL.Image.Image；示波器两通道均为 0.5 V/div
-result = get_unet_measurer().analyse(original_image, volts_per_div=0.5)
-st.image(result["overlay"], caption=result["method"])
-st.json({key: result[key] for key in (
-    "hc_negative_div", "hc_positive_div", "br_positive_div", "br_negative_div",
-    "hc_half_span_div", "br_half_span_div", "trace_pixels",
-)})
+result = get_unet_measurer().analyse(original_image)
+st.image(result["overlay"], caption="U-Net segmentation")
+st.json({"features_div": result["features_div"], "trace_pixels": result["trace_pixels"]})
 ```
 
 不要调用旧代码中默认 `N1/L/R1/R2/C/N2/S` 的 H/B 换算。现阶段界面应显示“div”和“V”；当实际电路常数重新标定后，再将其写入单独的校准文件。

@@ -10,9 +10,9 @@
 | --- | --- |
 | `metadata/manifest.csv` | 自动采集时记录的图像、sample_id、状态及关联信息。 |
 | `metadata/parameters.csv` | 每个采集样本的 STM32 控制参数真值。 |
-| `labelme_annotations/labels.txt` | 标签定义，当前主标签为 `hysteresis_loop`。 |
-| `labelme_annotations/annotations/` | 与图片同名的 LabelMe JSON。 |
-| `../dataset/images/` | 本机原图位置，不纳入 Git。 |
+| `../python/dataset/labelme/labels.txt` | 标签定义，当前主标签为 `hysteresis_loop`。 |
+| `../python/dataset/labelme/annotations/` | 与图片同名的 LabelMe JSON。 |
+| `../python/images/` | 本机原图位置，不纳入 Git。 |
 
 `sample_id` 与图片基名、LabelMe JSON 基名必须一一对应，例如 `IMG_0001.jpg` 与 `IMG_0001.json`。标注表达的是图像中可见的荧光磁滞轨迹；不要擅自改变标签语义或把不可见的曲线延伸补成标签。
 

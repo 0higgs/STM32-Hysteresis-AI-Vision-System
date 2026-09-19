@@ -1,4 +1,4 @@
 {
-  "vertical_grid_candidates_x": [31, 112, 192, 272, 347, 426, 505, 583],
-  "horizontal_grid_candidates_y": [65, 144, 225, 308, 384, 463, 542]
+  "vertical_grid_candidates_x": [0, 70, 143, 215, 282, 352, 423, 493, 563, 629],
+  "horizontal_grid_candidates_y": [10, 87, 157, 228, 301, 367, 436, 506, 575]
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-19 model refresh
+
+### Changed
+
+- 使用最新 136 份 LabelMe 标注和对应原图重训并替换部署 U-Net。
+- 训练/验证划分扩展为 110/26，并纳入全部 9 类拍摄条件。
+- 统一训练数据路径为 `python/images/` 与 `python/dataset/labelme/annotations/`。
+- 更新部署 ROI、网格标定、模型元数据和 README 指标口径。
+
 ## V1.0.0
 
 ### Added

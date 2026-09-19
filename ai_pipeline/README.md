@@ -4,8 +4,8 @@
 
 ## 可复现流程
 
-1. 将原始照片按 `sample_id` 放到本机 `../dataset/images/`（不入 Git）。
-2. 使用 LabelMe 标注单类 `hysteresis_loop` 曲线；JSON 放在 `../data/labelme_annotations/annotations/`。
+1. 将原始照片按 `sample_id` 放到本机 `../python/images/`（不入 Git）。
+2. 使用 LabelMe 标注单类 `hysteresis_loop` 曲线；JSON 放在 `../python/dataset/labelme/annotations/`。
 3. 执行 `prepare_segmentation_dataset.py`，生成本地 segmentation 数据集与训练/验证划分。
 4. 执行 `train_unet_tensorflow.py`，训练 TensorFlow U-Net 并导出 `.keras` 模型。
 5. 用 `predict_all_images.py` 批量预测，必要时用 `export_validation_previews.py` 生成有限预览。
@@ -18,6 +18,7 @@
 | --- | --- |
 | `prepare_segmentation_dataset.py` | LabelMe JSON 转换为图像/掩膜数据集并生成划分。 |
 | `train_unet_tensorflow.py` | V1.0 正式 TensorFlow U-Net 训练。 |
+| `evaluate_unet_tensorflow.py` | 在固定划分上导出逐图 Dice/IoU、模型哈希和推理耗时。 |
 | `predict_all_images.py` | 批量运行已训练模型。 |
 | `extract_grid_features.py` | 从图像/预测结果提取网格特征。 |
 | `calibrate_fixed_screen.py` | 固定相机/示波器布局的标定工具。 |
@@ -25,4 +26,4 @@
 | `evaluate_parameter_identifiability.py` | 评估各参数由静态图像识别的可行性。 |
 | `export_validation_previews.py` | 生成小规模验证可视化。 |
 
-训练中不可将参数真值表直接输入未知图像推理；它只用于监督/评估。不要替换或改写 `models/hysteresis_unet_v1.keras`，除非形成一个带训练记录的新模型版本。
+默认会纳入上述目录内全部有效标注；如需复现早期排除曝光/裁切样本的范围，可给数据准备脚本传入 `--exclude-optional`。训练中不可将参数真值表直接输入未知图像推理；它只用于监督/评估。只有在保存训练配置、历史、验证指标和模型哈希后，才可替换 `models/hysteresis_unet_v1.keras`。

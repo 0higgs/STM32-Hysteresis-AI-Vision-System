@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from datetime import datetime, timezone
 import json
 import random
 from pathlib import Path
@@ -19,7 +20,7 @@ import tensorflow as tf
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASET = ROOT / "dataset" / "segmentation_v1"
+DATASET = ROOT / "python" / "dataset" / "segmentation_v1"
 RUN_DIR = ROOT / "runs" / "unet_v1_tensorflow"
 
 
@@ -118,7 +119,22 @@ def main() -> None:
     model.compile(optimizer=tf.keras.optimizers.AdamW(args.learning_rate, weight_decay=1e-4), loss=dice_bce_loss, metrics=[dice_coefficient])
 
     RUN_DIR.mkdir(parents=True, exist_ok=True)
-    (RUN_DIR / "run_config.json").write_text(json.dumps({"epochs": args.epochs, "batch_size": args.batch_size, "learning_rate": args.learning_rate, "train_count": len(train_rows), "valid_count": len(valid_rows), "input_shape": input_shape.shape}, indent=2), encoding="utf-8")
+    dataset_config = json.loads((DATASET / "dataset_config.json").read_text(encoding="utf-8"))
+    run_config = {
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "tensorflow_version": tf.__version__,
+        "device": "GPU" if tf.config.list_physical_devices("GPU") else "CPU",
+        "epochs_requested": args.epochs,
+        "batch_size": args.batch_size,
+        "learning_rate": args.learning_rate,
+        "seed": args.seed,
+        "train_count": len(train_rows),
+        "valid_count": len(valid_rows),
+        "input_shape": list(input_shape.shape),
+        "dataset_source_fingerprint_sha256": dataset_config.get("source_fingerprint_sha256"),
+        "includes_optional_conditions": dataset_config.get("includes_optional_conditions"),
+    }
+    (RUN_DIR / "run_config.json").write_text(json.dumps(run_config, indent=2), encoding="utf-8")
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(RUN_DIR / "best.keras", monitor="val_dice_coefficient", mode="max", save_best_only=True),
         tf.keras.callbacks.EarlyStopping(monitor="val_dice_coefficient", mode="max", patience=7, restore_best_weights=True),
@@ -126,10 +142,25 @@ def main() -> None:
         tf.keras.callbacks.CSVLogger(RUN_DIR / "history.csv"),
     ]
     print(f"TENSORFLOW={tf.__version__} DEVICE={'GPU' if tf.config.list_physical_devices('GPU') else 'CPU'} TRAIN={len(train_rows)} VALID={len(valid_rows)}")
-    model.fit(train_ds, validation_data=valid_ds, epochs=args.epochs, callbacks=callbacks, verbose=2)
+    history = model.fit(train_ds, validation_data=valid_ds, epochs=args.epochs, callbacks=callbacks, verbose=2)
+    run_config["epochs_completed"] = len(history.epoch)
+    validation_history = history.history.get("val_dice_coefficient", [])
+    if validation_history:
+        best_index = int(np.argmax(validation_history))
+        run_config["best_epoch"] = best_index + 1
+        run_config["best_validation_dice"] = float(validation_history[best_index])
+    (RUN_DIR / "run_config.json").write_text(json.dumps(run_config, indent=2), encoding="utf-8")
+    history_columns = ["epoch", *history.history]
+    with (RUN_DIR / "history.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=history_columns)
+        writer.writeheader()
+        for index, epoch in enumerate(history.epoch):
+            writer.writerow({"epoch": epoch, **{key: values[index] for key, values in history.history.items()}})
     model.save(RUN_DIR / "final.keras")
     scores = model.evaluate(valid_ds, verbose=0, return_dict=True)
-    print("FINAL=" + json.dumps({key: float(value) for key, value in scores.items()}))
+    final_scores = {key: float(value) for key, value in scores.items()}
+    (RUN_DIR / "final_scores.json").write_text(json.dumps(final_scores, indent=2), encoding="utf-8")
+    print("FINAL=" + json.dumps(final_scores))
 
 
 if __name__ == "__main__":

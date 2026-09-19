@@ -14,27 +14,26 @@ from scipy.signal import find_peaks
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = ROOT / "models" / "hysteresis_unet_v1.keras"
 GRID = ROOT / "ai_model" / "fixed_screen_grid.json"
+MODEL_METADATA = ROOT / "ai_model" / "model_metadata.json"
 
 
 class UNetLoopMeasurer:
     """Lazy-loadable local TensorFlow model for the fixed acquisition setup."""
-
-    # Original phone photo ROI and the U-Net input resolution.
-    ROI = (2059, 404, 3800, 2054)
-    TARGET_SIZE = (640, 600)
 
     def __init__(self) -> None:
         import tensorflow as tf
 
         if not MODEL.is_file():
             raise FileNotFoundError(f"Missing trained model: {MODEL}")
+        metadata = json.loads(MODEL_METADATA.read_text(encoding="utf-8"))
+        self.ROI = tuple(metadata["source_roi_xyxy"])
+        self.TARGET_SIZE = tuple(metadata["target_size_wh"])
         grid = json.loads(GRID.read_text(encoding="utf-8"))
         xs = np.asarray(grid["vertical_grid_candidates_x"], dtype=float)
         ys = np.asarray(grid["horizontal_grid_candidates_y"], dtype=float)
         # These are only fallbacks. The actual origin/grid is detected per photo
         # because small camera translations make a fixed origin visibly wrong.
-        self.x0 = 301.0
-        self.y0 = 339.0
+        self.x0, self.y0 = map(float, metadata["grid_origin_reference_px"])
         self.x_div = float(np.median(np.diff(xs)))
         self.y_div = float(np.median(np.diff(ys)))
         self.model = tf.keras.models.load_model(MODEL, compile=False)

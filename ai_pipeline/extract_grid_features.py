@@ -17,8 +17,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 MASKS = ROOT / "predictions" / "unet_v1" / "masks_640x600"
-GRID = ROOT / "calibration" / "fixed_screen_v1" / "grid_candidates.json"
-OUT = ROOT / "calibration" / "fixed_screen_v1"
+GRID = ROOT / "ai_pipeline" / "calibration" / "grid_candidates.json"
+OUT = ROOT / "ai_pipeline" / "calibration"
 
 
 def main() -> None:

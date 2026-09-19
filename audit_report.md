@@ -7,8 +7,8 @@
 | 自研核心源代码 | `app.py`、`analyzer.py`、`ai_model/`、`desktop_capture/`、`firmware/User/` | KEEP；正式业务实现。 |
 | 第三方代码 | `firmware/Drivers/`、`firmware/Middlewares/`、CMSIS、HAL、启动文件 | THIRD_PARTY；保留以编译，不作原创源码。 |
 | 自动生成代码 | Keil `.uvoptx/.uvguix`、DebugConfig、HAL 配置及构建文件 | KEEP（工程所需）或 IGNORE（构建输出）；不列软著主体。 |
-| 数据文件 | `data/metadata/`、`data/labelme_annotations/`、`ai_pipeline/calibration/` | KEEP；原始 500 JPG 不入库。 |
-| 模型文件 | `models/hysteresis_unet_v1.keras` | KEEP；只读部署资产，不修改数值。 |
+| 数据文件 | `data/metadata/`、`python/dataset/labelme/`、`ai_pipeline/calibration/` | KEEP；原始 500 JPG 不入库。 |
+| 模型文件 | `models/hysteresis_unet_v1.keras` | KEEP；2026-09-19 使用最新 136 份标注重训并替换。 |
 | 训练/评估代码 | `ai_pipeline/*.py`、`evaluation/` | KEEP；TensorFlow 脚本为正式流程。 |
 | Web 应用 | `app.py` | KEEP；唯一正式入口。 |
 | Windows 上位机 | `desktop_capture/main.py`、`adb_camera.py`、`dataset_manifest.py` | KEEP；唯一正式入口为 `main.py`。 |
@@ -33,8 +33,8 @@
 | `firmware/User/` | KEEP | 自研 STM32 业务、模型、协议及项目模块。 |
 | `firmware/Drivers/`、`Middlewares/` | THIRD_PARTY | HAL/CMSIS/SDK 依赖。 |
 | `firmware/Output/` | DELETE/IGNORE | 编译输出；经核验 HEX 已移动为发布资产。 |
-| `models/` | KEEP | 已训练模型，V1.0 未改动。 |
-| `evaluation/` | KEEP | 仅保留有限实验记录和预览。 |
+| `models/` | KEEP | 已训练部署模型；哈希和训练口径记录在 `ai_model/model_metadata.json`。 |
+| `evaluation/` | KEEP | 保留训练配置、历史、逐图指标、汇总和验证预览。 |
 | `data/` | KEEP | metadata/标注/标定，不含原始大图。 |
 
 ## 软著源码选择

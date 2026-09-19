@@ -1,15 +1,16 @@
 """Convert LabelMe line-strip annotations into a compact U-Net dataset.
 
-Only annotated images are considered.  By default the first dataset excludes
-the capture conditions that the user decided are outside the v1 target scope:
-over/under exposure and screen clipping.  Their JSON annotations are retained
-unchanged and can be included in a later version with --include-optional.
+Only annotated images are considered.  The current default includes every
+valid annotation in the canonical ``python/dataset`` source directory.  A
+legacy scope that excludes exposure and clipping cases remains available via
+``--exclude-optional``.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import random
 import shutil
@@ -20,15 +21,24 @@ from PIL import Image, ImageDraw
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ANNOTATIONS = ROOT / "dataset" / "labelme" / "annotations"
-MANIFEST = ROOT / "dataset" / "manifest.csv"
-OUTPUT = ROOT / "dataset" / "segmentation_v1"
+SOURCE_ROOT = ROOT / "python"
+ANNOTATIONS = SOURCE_ROOT / "dataset" / "labelme" / "annotations"
+MANIFEST = ROOT / "data" / "metadata" / "manifest.csv"
+OUTPUT = SOURCE_ROOT / "dataset" / "segmentation_v1"
 # The phone photographs include the full bench.  Train on the fixed CRT region
 # rather than downsampling the actual curve into a few pixels.
 TARGET_SIZE = (640, 600)
 ROI_MARGIN_X = 300
 ROI_MARGIN_Y = 250
 OPTIONAL_CONDITIONS = {"overexposed", "underexposed", "partial_frame", "scale_clipping"}
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def read_manifest() -> dict[str, dict[str, str]]:
@@ -98,7 +108,7 @@ def write_csv(path: Path, rows: list[dict[str, str]], columns: list[str]) -> Non
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--include-optional", action="store_true", help="include clipping/exposure conditions in v1")
+    parser.add_argument("--exclude-optional", action="store_true", help="use the legacy scope without clipping/exposure cases")
     parser.add_argument("--overwrite", action="store_true", help="replace generated dataset output")
     args = parser.parse_args()
 
@@ -126,7 +136,7 @@ def main() -> None:
             if metadata is None:
                 raise KeyError(f"not found in manifest: {image_name}")
             condition = metadata.get("DEFECT_TYPE", "UNSPECIFIED")
-            if not args.include_optional and condition in OPTIONAL_CONDITIONS:
+            if args.exclude_optional and condition in OPTIONAL_CONDITIONS:
                 excluded.append({"json": json_path.name, "image": image_name, "condition": condition, "reason": "outside_v1_scope"})
                 continue
             # Validate annotation before generating any output files.
@@ -174,7 +184,23 @@ def main() -> None:
     assign_splits(records)
     write_csv(OUTPUT / "samples.csv", records, ["id", "image", "mask", "source_json", "condition", "split"])
     write_csv(OUTPUT / "excluded_from_v1.csv", excluded, ["json", "image", "condition", "reason"])
-    (OUTPUT / "dataset_config.json").write_text(json.dumps({"source_roi_xyxy": [left, top, right, bottom], "target_size_wh": list(TARGET_SIZE)}, indent=2), encoding="utf-8")
+    fingerprint = hashlib.sha256()
+    for json_path, _, image_path, _ in sorted(pending, key=lambda item: item[0].name):
+        fingerprint.update(json_path.name.encode("utf-8"))
+        fingerprint.update(sha256_file(json_path).encode("ascii"))
+        fingerprint.update(sha256_file(image_path).encode("ascii"))
+    split_counts = {split: sum(row["split"] == split for row in records) for split in ("train", "valid")}
+    config = {
+        "source_roi_xyxy": [left, top, right, bottom],
+        "target_size_wh": list(TARGET_SIZE),
+        "annotation_count": len(records),
+        "excluded_count": len(excluded),
+        "split_counts": split_counts,
+        "split_seed": 20260814,
+        "includes_optional_conditions": not args.exclude_optional,
+        "source_fingerprint_sha256": fingerprint.hexdigest(),
+    }
+    (OUTPUT / "dataset_config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
 
     # Create visual audit panels for the first six records.
     preview_dir = OUTPUT / "previews"
@@ -189,7 +215,8 @@ def main() -> None:
     print(f"OUTPUT={OUTPUT}")
     print(f"TRAINABLE={len(records)}")
     print(f"EXCLUDED={len(excluded)}")
-    print("SPLITS=" + ", ".join(f"{split}:{sum(row['split'] == split for row in records)}" for split in ("train", "valid")))
+    print("SPLITS=" + ", ".join(f"{split}:{count}" for split, count in split_counts.items()))
+    print(f"SOURCE_FINGERPRINT_SHA256={config['source_fingerprint_sha256']}")
 
 
 if __name__ == "__main__":

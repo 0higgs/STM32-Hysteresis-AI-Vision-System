@@ -17,6 +17,10 @@ __pycache__/
 .env.*
 
 # Large local datasets and generated training artifacts
+python/images/
+python/dataset/segmentation_v1/images/
+python/dataset/segmentation_v1/masks/
+python/dataset/segmentation_v1/previews/
 dataset/images/
 dataset/raw/
 dataset/roboflow_upload_v1/images/

@@ -52,9 +52,9 @@ Keil 工程为 `firmware/Projects/MDK-ARM/atk_f407.uvprojx`，发布镜像为 `r
 
 ## AI 训练与数据集
 
-原始 500 张 JPG 约 1 GB，不进入普通 Git 历史。将它们按 `sample_id` 放在本机 `dataset/images/`，再按 [ai_pipeline/README.md](ai_pipeline/README.md) 执行 LabelMe 转换、TensorFlow 训练和预测。仓库保留 metadata、人工标注、标定文件、训练脚本、部署模型和少量验证预览。
+原始 500 张 JPG 约 1 GB，不进入普通 Git 历史。将它们按 `sample_id` 放在本机 `python/images/`，LabelMe JSON 放在 `python/dataset/labelme/annotations/`，再按 [ai_pipeline/README.md](ai_pipeline/README.md) 执行数据转换、TensorFlow 训练和预测。仓库保留 metadata、136 份人工标注、固定划分清单、标定文件、训练脚本、部署模型和验证记录。
 
-部署模型为 `models/hysteresis_unet_v1.keras`。V1.0 整理过程没有重新训练或改动权重。清洁留出集的 Dice 记录为 `0.880`（9 张验证图），仅是当前原型实验记录，不应解释为大规模泛化性能结论。
+部署模型为 `models/hysteresis_unet_v1.keras`，已于 2026-09-19 使用上述最新 136 份标注重新训练并替换。固定随机种子下划分为 110 张训练、26 张验证，纳入全部 9 类拍摄条件；验证集平均 Dice 为 `0.8952`，平均 IoU 为 `0.8117`，最低单图 Dice 为 `0.8141`。模型 SHA-256 为 `60d8e72c81b1121454ae80741041a2be3b10c53a11c0c1b4ca6a59b5948b960e`。这些结果来自同一固定采集装置的分层留出集，不是跨设备独立测试，不能解释为大规模泛化性能结论。完整记录见 `evaluation/` 和 `ai_model/model_metadata.json`。
 
 ## 目录结构
 

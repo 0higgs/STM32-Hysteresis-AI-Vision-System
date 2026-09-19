@@ -1,0 +1,21 @@
+{
+  "source_roi_xyxy": [
+    1927,
+    307,
+    3878,
+    2191
+  ],
+  "target_size_wh": [
+    640,
+    600
+  ],
+  "annotation_count": 136,
+  "excluded_count": 0,
+  "split_counts": {
+    "train": 110,
+    "valid": 26
+  },
+  "split_seed": 20260814,
+  "includes_optional_conditions": true,
+  "source_fingerprint_sha256": "204c994c977c155eeb858a175fe5e38aa386cd0287b9ac310790da7e2a15e77a"
+}

@@ -11,7 +11,7 @@ import tensorflow as tf
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASET = ROOT / "dataset" / "segmentation_v1"
+DATASET = ROOT / "python" / "dataset" / "segmentation_v1"
 RUN = ROOT / "runs" / "unet_v1_tensorflow"
 
 
