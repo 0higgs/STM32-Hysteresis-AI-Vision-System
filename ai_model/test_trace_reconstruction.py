@@ -7,7 +7,11 @@ import unittest
 import numpy as np
 from PIL import Image
 
-from ai_model.unet_measurement import UNetLoopMeasurer, extract_trace_branches
+from ai_model.unet_measurement import (
+    UNetLoopMeasurer,
+    extract_trace_branches,
+    measure_trace_features,
+)
 
 
 class TraceReconstructionTests(unittest.TestCase):
@@ -37,6 +41,25 @@ class TraceReconstructionTests(unittest.TestCase):
         self.assertEqual(quality["status"], "fallback")
         self.assertFalse(quality["x_axis_detected"])
         self.assertFalse(quality["y_axis_detected"])
+
+    def test_features_are_measured_from_reconstructed_branches(self) -> None:
+        xs = np.arange(15.0, 146.0)
+        upper_y = 80.0 - 40.0 / (1.0 + np.exp(-(xs - 50.0) / 10.0))
+        lower_y = 80.0 - 40.0 / (1.0 + np.exp(-(xs - 100.0) / 10.0))
+        branches = {
+            "upper": list(zip(xs, upper_y)),
+            "lower": list(zip(xs, lower_y)),
+        }
+
+        points, features = measure_trace_features(branches, x0=80.0, y0=60.0, x_div=20.0, y_div=20.0)
+        self.assertLess(points["hc_negative"][0], 80.0)
+        self.assertGreater(points["hc_positive"][0], 80.0)
+        self.assertLess(points["br_positive"][1], 60.0)
+        self.assertGreater(points["br_negative"][1], 60.0)
+        self.assertLess(features["hc_negative"], 0.0)
+        self.assertGreater(features["hc_positive"], 0.0)
+        self.assertGreater(features["br_positive"], 0.0)
+        self.assertLess(features["br_negative"], 0.0)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,41 @@ st.markdown(
     "> **机器视觉 + AI 教学版**：图像算法负责可复核的像素测量，AI 负责证据解释和学习反馈；"
     "保留正负方向原始物理量，不强制回线中心对称。"
 )
+st.markdown(
+    """
+    <style>
+    /* Keep both result views square while remaining usable on phones. */
+    .st-key-square-bh-result,
+    .st-key-square-normalized-result,
+    .st-key-square-assessment-result {
+        width: min(100%, 760px);
+        margin-inline: auto;
+    }
+    .st-key-square-bh-result div[data-testid="stPlotlyChart"],
+    .st-key-square-normalized-result div[data-testid="stPlotlyChart"],
+    .st-key-square-assessment-result div[data-testid="stPlotlyChart"] {
+        width: 100% !important;
+        aspect-ratio: 1 / 1;
+    }
+    .st-key-square-bh-result div[data-testid="stPlotlyChart"] > div,
+    .st-key-square-normalized-result div[data-testid="stPlotlyChart"] > div,
+    .st-key-square-assessment-result div[data-testid="stPlotlyChart"] > div,
+    .st-key-square-bh-result .js-plotly-plot,
+    .st-key-square-normalized-result .js-plotly-plot,
+    .st-key-square-assessment-result .js-plotly-plot,
+    .st-key-square-bh-result .plot-container,
+    .st-key-square-normalized-result .plot-container,
+    .st-key-square-assessment-result .plot-container,
+    .st-key-square-bh-result .svg-container,
+    .st-key-square-normalized-result .svg-container,
+    .st-key-square-assessment-result .svg-container {
+        width: 100% !important;
+        height: 100% !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # Never commit a cloud credential.  A missing secrets.toml must not prevent the
@@ -99,7 +134,10 @@ def fixed_crop_points_to_display(point_map, original_size, display_size):
     for name, (x, y) in point_map.items():
         source_x = left + float(x) / UNetLoopMeasurer.TARGET_SIZE[0] * (right - left)
         source_y = top + float(y) / UNetLoopMeasurer.TARGET_SIZE[1] * (bottom - top)
-        mapped[name] = (int(round(source_x * sx)), int(round(source_y * sy)))
+        # Keep sub-pixel precision so feature markers and reconstructed paths
+        # remain the same affine geometry after resizing. ImageDraw accepts
+        # float coordinates and manual clicks can still remain integer-valued.
+        mapped[name] = (source_x * sx, source_y * sy)
     return mapped
 
 
@@ -171,6 +209,17 @@ def render_card(title, content, tone="blue"):
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_square_plot(fig, *, key):
+    """Render a responsive Plotly chart inside a square, centered viewport."""
+    with st.container(key=key):
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=f"{key}-chart",
+            config={"responsive": True},
+        )
 
 
 def call_vision_json(pil_img, prompt):
@@ -898,7 +947,7 @@ if uploaded_file is not None:
         if center_for_display:
             title += "（仅显示时扣除估计中心偏移）"
         fig.update_layout(
-            title=title, xaxis_title=unit_h, yaxis_title=unit_b, hovermode="closest", height=520,
+            title=title, xaxis_title=unit_h, yaxis_title=unit_b, hovermode="closest", autosize=True,
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(zeroline=True, zerolinewidth=1), yaxis=dict(zeroline=True, zerolinewidth=1),
         )
@@ -913,7 +962,7 @@ if uploaded_file is not None:
         if assessment_locked:
             st.info("考核进行中，B-H 数值与曲线将在提交考核后显示。")
         elif is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0:
-            st.plotly_chart(plot_loop(normalized=False), use_container_width=True)
+            render_square_plot(plot_loop(normalized=False), key="square-bh-result")
             metric_cols = st.columns(4)
             h_unit, b_unit = ("A/m", "T") if physical_calibration_enabled else ("V", "V")
             metric_cols[0].metric("Hc-", f"{h_c_neg:.2f} {h_unit}")
@@ -931,7 +980,7 @@ if uploaded_file is not None:
         if assessment_locked:
             st.info("考核进行中，归一化结果将在提交考核后显示。")
         elif is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0:
-            st.plotly_chart(plot_loop(normalized=True), use_container_width=True)
+            render_square_plot(plot_loop(normalized=True), key="square-normalized-result")
             st.caption("此图使用 H/Hm 与 B/Bm，为真正的无量纲归一化；示波器电压不再称为归一化参数。")
         else:
             st.info("请先完成 8 个核心点标定。")
@@ -1217,10 +1266,9 @@ if uploaded_file is not None:
             }
             st.table(pd.DataFrame(score_table))
             if measurement_ready:
-                st.plotly_chart(
+                render_square_plot(
                     plot_loop(normalized=False),
-                    use_container_width=True,
-                    key="assessment_result_plot",
+                    key="square-assessment-result",
                 )
                 st.table(pd.DataFrame(table_data))
             if st.button("重新开始考核", use_container_width=True):

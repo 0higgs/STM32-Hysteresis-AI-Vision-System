@@ -9,6 +9,8 @@ from typing import Any
 import cv2
 import numpy as np
 from PIL import Image
+from scipy.interpolate import PchipInterpolator
+from scipy.optimize import brentq
 from scipy.signal import find_peaks, savgol_filter
 
 
@@ -68,6 +70,80 @@ def extract_trace_branches(mask: np.ndarray) -> dict[str, list[tuple[float, floa
     return {"upper": smooth(upper), "lower": smooth(lower)}
 
 
+def measure_trace_features(
+    branches: dict[str, list[tuple[float, float]]],
+    x0: float,
+    y0: float,
+    x_div: float,
+    y_div: float,
+) -> tuple[dict[str, tuple[float, float]], dict[str, float]]:
+    """Measure Hc/Br/endpoints from the same centerlines used for plotting."""
+
+    def interpolator(name: str) -> tuple[np.ndarray, np.ndarray, PchipInterpolator]:
+        points = np.asarray(branches[name], dtype=float)
+        if points.ndim != 2 or points.shape[0] < 4 or points.shape[1] != 2:
+            raise ValueError(f"{name} 分支点数不足")
+        order = np.argsort(points[:, 0])
+        xs, ys = points[order, 0], points[order, 1]
+        unique_xs, unique_indices = np.unique(xs, return_index=True)
+        ys = ys[unique_indices]
+        if len(unique_xs) < 4:
+            raise ValueError(f"{name} 分支横坐标不足")
+        return unique_xs, ys, PchipInterpolator(unique_xs, ys)
+
+    def axis_crossing(
+        xs: np.ndarray,
+        ys: np.ndarray,
+        curve: PchipInterpolator,
+        preferred_side: str,
+    ) -> float:
+        shifted = ys - y0
+        roots: list[float] = []
+        exact = np.flatnonzero(np.isclose(shifted, 0.0, atol=1e-9))
+        roots.extend(float(xs[index]) for index in exact)
+        for index in np.flatnonzero(shifted[:-1] * shifted[1:] < 0.0):
+            roots.append(float(brentq(lambda value: float(curve(value) - y0), xs[index], xs[index + 1])))
+        if not roots:
+            nearest = int(np.argmin(np.abs(shifted)))
+            if abs(shifted[nearest]) <= max(2.0, 0.20 * y_div):
+                roots.append(float(xs[nearest]))
+            else:
+                raise ValueError("重建分支未与 B=0 轴形成可靠交点")
+        preferred = [root for root in roots if root <= x0] if preferred_side == "left" else [root for root in roots if root >= x0]
+        candidates = preferred or roots
+        return min(candidates, key=lambda root: abs(root - x0))
+
+    upper_x, upper_y, upper_curve = interpolator("upper")
+    lower_x, lower_y, lower_curve = interpolator("lower")
+    common_min_x = max(float(upper_x.min()), float(lower_x.min()))
+    common_max_x = min(float(upper_x.max()), float(lower_x.max()))
+    if not common_min_x <= x0 <= common_max_x:
+        raise ValueError("H=0 轴位于重建回线范围之外")
+
+    hc_negative_x = axis_crossing(upper_x, upper_y, upper_curve, "left")
+    hc_positive_x = axis_crossing(lower_x, lower_y, lower_curve, "right")
+    br_positive_y = float(upper_curve(x0))
+    br_negative_y = float(lower_curve(x0))
+    extreme_positive = (float(upper_x[-1]), float(upper_curve(upper_x[-1])))
+    extreme_negative = (float(lower_x[0]), float(lower_curve(lower_x[0])))
+
+    points = {
+        "hc_negative": (hc_negative_x, y0),
+        "hc_positive": (hc_positive_x, y0),
+        "br_positive": (x0, br_positive_y),
+        "br_negative": (x0, br_negative_y),
+        "extreme_positive": extreme_positive,
+        "extreme_negative": extreme_negative,
+    }
+    features = {
+        "hc_negative": (hc_negative_x - x0) / x_div,
+        "hc_positive": (hc_positive_x - x0) / x_div,
+        "br_positive": (y0 - br_positive_y) / y_div,
+        "br_negative": (y0 - br_negative_y) / y_div,
+    }
+    return points, features
+
+
 class UNetLoopMeasurer:
     """Lazy-loadable local TensorFlow model for the fixed acquisition setup."""
 
@@ -104,40 +180,20 @@ class UNetLoopMeasurer:
         ys, xs = np.where(mask)
         if len(xs) < 50:
             raise ValueError("AI 未识别到足够的回线像素，请检查拍摄位置、清晰度和曝光。")
-        gx, gy = (xs - x0) / x_div, (y0 - ys) / y_div
-        band = 0.12 * min(x_div, y_div)
-        horizontal = gx[np.abs(ys - y0) <= band]
-        vertical = gy[np.abs(xs - x0) <= band]
-
-        def crossings(values: np.ndarray) -> tuple[float, float]:
-            return (float("nan"), float("nan")) if len(values) < 10 else (float(np.percentile(values, 10)), float(np.percentile(values, 90)))
-
-        hc_neg, hc_pos = crossings(horizontal)
-        br_neg, br_pos = crossings(vertical)
-        # Saturation extrema are not "diagonal-most" pixels.  Select the
-        # physical outer corners of the top/bottom saturation plateaus:
-        # positive = top-right; negative = bottom-left.
-        top_band = np.where(ys <= np.percentile(ys, 2.0))[0]
-        bottom_band = np.where(ys >= np.percentile(ys, 98.0))[0]
-        pos = int(top_band[np.argmax(xs[top_band])])
-        neg = int(bottom_band[np.argmin(xs[bottom_band])])
+        branches = extract_trace_branches(mask)
+        measured_points, features_div = measure_trace_features(branches, x0, y0, x_div, y_div)
         points = {
             "origin": (x0, y0), "scale_right": (x0 + x_div, y0),
             "scale_up": (x0, y0 - y_div),
-            "hc_negative": (x0 + hc_neg * x_div, y0),
-            "hc_positive": (x0 + hc_pos * x_div, y0),
-            "br_positive": (x0, y0 - br_pos * y_div),
-            "br_negative": (x0, y0 - br_neg * y_div),
-            "extreme_positive": (xs[pos], ys[pos]), "extreme_negative": (xs[neg], ys[neg]),
+            **measured_points,
         }
-        branches = extract_trace_branches(mask)
         base = np.asarray(crop, dtype=np.float32)
         blue = np.zeros_like(base); blue[..., 2] = 255
         overlay = Image.fromarray((base * (1 - mask[..., None] * .55) + blue * (mask[..., None] * .55)).astype(np.uint8))
         return {
             "points_in_crop": points, "overlay": overlay,
             "branches_in_crop": branches,
-            "features_div": {"hc_negative": hc_neg, "hc_positive": hc_pos, "br_positive": br_pos, "br_negative": br_neg},
+            "features_div": features_div,
             "trace_pixels": int(len(xs)), "mean_probability_on_trace": float(probability[mask].mean()),
             "grid_size_px": float((x_div + y_div) / 2), "grid_origin_px": (x0, y0),
             "grid_size_x_px": float(x_div), "grid_size_y_px": float(y_div),

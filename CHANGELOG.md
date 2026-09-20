@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-21 curve-point alignment and square plots
+
+### Fixed
+
+- Hc、Br 与正负饱和端点改为直接从最终上下分支中心线测量，与结果图共用同一数据源，避免特征点偏离所绘曲线。
+- B-H 结果图、无量纲归一化图及考核结果图改为响应式 1:1 绘图区，桌面端居中显示、窄屏端等比例缩放。
+
+### Validation
+
+- 新增“特征点来自重建分支”的单元测试，并保留网格检测、模型几何契约和双分支重建测试。
+
 ## 2026-09-20 full-curve reconstruction
 
 ### Changed
