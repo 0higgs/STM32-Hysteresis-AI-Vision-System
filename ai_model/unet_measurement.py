@@ -6,9 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 from PIL import Image
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, savgol_filter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,55 @@ MODEL = ROOT / "models" / "hysteresis_unet_v1.keras"
 GRID = ROOT / "ai_model" / "fixed_screen_grid.json"
 MODEL_METADATA = ROOT / "ai_model" / "model_metadata.json"
 MODEL_CONFIG = json.loads(MODEL_METADATA.read_text(encoding="utf-8"))
+
+
+def extract_trace_branches(mask: np.ndarray) -> dict[str, list[tuple[float, float]]]:
+    """Reduce a thick loop mask to ordered upper/lower centerlines.
+
+    A hysteresis loop normally intersects a vertical image column twice.  The
+    centers of the uppermost and lowermost foreground runs therefore form two
+    naturally ordered branches.  At the saturation ends the runs merge; the
+    shared center is retained on both branches so the rendered loop closes.
+    """
+    binary = np.asarray(mask, dtype=np.uint8)
+    if binary.ndim != 2:
+        raise ValueError("回线掩膜必须是二维数组")
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+
+    component_count, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    if component_count <= 1:
+        raise ValueError("U-Net 掩膜中没有连续回线")
+    component_areas = stats[1:, cv2.CC_STAT_AREA]
+    largest_area = int(component_areas.max())
+    retained_labels = 1 + np.flatnonzero(component_areas >= max(20, largest_area * 0.05))
+    binary = np.isin(labels, retained_labels).astype(np.uint8)
+
+    height, width = binary.shape
+    max_run_gap = max(2, int(round(height * 0.006)))
+    upper: list[tuple[float, float]] = []
+    lower: list[tuple[float, float]] = []
+    for x in range(width):
+        ys = np.flatnonzero(binary[:, x])
+        if len(ys) == 0:
+            continue
+        split_at = np.flatnonzero(np.diff(ys) > max_run_gap) + 1
+        runs = [run for run in np.split(ys, split_at) if len(run) >= 1]
+        centers = [float(np.mean(run)) for run in runs]
+        upper.append((float(x), min(centers)))
+        lower.append((float(x), max(centers)))
+
+    if len(upper) < max(25, width // 20):
+        raise ValueError("U-Net 回线横向跨度不足，无法重建完整分支")
+
+    def smooth(branch: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        points = np.asarray(branch, dtype=float)
+        sample_count = len(points)
+        window = min(31, sample_count if sample_count % 2 else sample_count - 1)
+        if window >= 7:
+            points[:, 1] = savgol_filter(points[:, 1], window_length=window, polyorder=2, mode="interp")
+        return [(float(x), float(y)) for x, y in points]
+
+    return {"upper": smooth(upper), "lower": smooth(lower)}
 
 
 class UNetLoopMeasurer:
@@ -73,20 +123,24 @@ class UNetLoopMeasurer:
         neg = int(bottom_band[np.argmin(xs[bottom_band])])
         points = {
             "origin": (x0, y0), "scale_right": (x0 + x_div, y0),
+            "scale_up": (x0, y0 - y_div),
             "hc_negative": (x0 + hc_neg * x_div, y0),
             "hc_positive": (x0 + hc_pos * x_div, y0),
             "br_positive": (x0, y0 - br_pos * y_div),
             "br_negative": (x0, y0 - br_neg * y_div),
             "extreme_positive": (xs[pos], ys[pos]), "extreme_negative": (xs[neg], ys[neg]),
         }
+        branches = extract_trace_branches(mask)
         base = np.asarray(crop, dtype=np.float32)
         blue = np.zeros_like(base); blue[..., 2] = 255
         overlay = Image.fromarray((base * (1 - mask[..., None] * .55) + blue * (mask[..., None] * .55)).astype(np.uint8))
         return {
             "points_in_crop": points, "overlay": overlay,
+            "branches_in_crop": branches,
             "features_div": {"hc_negative": hc_neg, "hc_positive": hc_pos, "br_positive": br_pos, "br_negative": br_neg},
             "trace_pixels": int(len(xs)), "mean_probability_on_trace": float(probability[mask].mean()),
             "grid_size_px": float((x_div + y_div) / 2), "grid_origin_px": (x0, y0),
+            "grid_size_x_px": float(x_div), "grid_size_y_px": float(y_div),
             "grid_quality": grid_quality,
         }
 
@@ -107,14 +161,32 @@ class UNetLoopMeasurer:
 
         def near_axis(candidates, reference):
             close = candidates[np.abs(candidates - reference) <= 45]
-            return float(close[np.argmin(abs(close - reference))]) if len(close) else reference
+            if len(close):
+                return float(close[np.argmin(abs(close - reference))]), True
+            return float(reference), False
 
         def spacing(candidates, fallback):
             gaps = np.diff(candidates.astype(float))
             gaps = gaps[(gaps >= 55) & (gaps <= 100)]
-            return float(np.median(gaps)) if len(gaps) >= 3 else fallback
+            if len(gaps) >= 3:
+                return float(np.median(gaps)), True, int(len(gaps))
+            return float(fallback), False, int(len(gaps))
 
-        x0, y0 = near_axis(x_peaks, self.x0), near_axis(y_peaks, self.y0)
-        x_div, y_div = spacing(x_peaks, self.x_div), spacing(y_peaks, self.y_div)
-        quality = "dynamic" if abs(x0 - self.x0) <= 45 and abs(y0 - self.y0) <= 45 else "fallback"
+        x0, x_axis_detected = near_axis(x_peaks, self.x0)
+        y0, y_axis_detected = near_axis(y_peaks, self.y0)
+        x_div, x_spacing_detected, x_gap_count = spacing(x_peaks, self.x_div)
+        y_div, y_spacing_detected, y_gap_count = spacing(y_peaks, self.y_div)
+        detected_flags = (x_axis_detected, y_axis_detected, x_spacing_detected, y_spacing_detected)
+        status = "detected" if all(detected_flags) else ("partial" if any(detected_flags) else "fallback")
+        quality = {
+            "status": status,
+            "x_axis_detected": x_axis_detected,
+            "y_axis_detected": y_axis_detected,
+            "x_spacing_detected": x_spacing_detected,
+            "y_spacing_detected": y_spacing_detected,
+            "x_peak_count": int(len(x_peaks)),
+            "y_peak_count": int(len(y_peaks)),
+            "x_gap_count": x_gap_count,
+            "y_gap_count": y_gap_count,
+        }
         return x0, y0, x_div, y_div, quality

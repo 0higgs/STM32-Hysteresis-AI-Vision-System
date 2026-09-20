@@ -12,7 +12,7 @@
 参数表 CSV/XLSX
   -> Windows 上位机 -> JDY-34 蓝牙串口 -> STM32F407 -> DAC2(X) / DAC1(Y)
   -> 示波器 X-Y 显示 -> Android 手机 ADB 拍摄 -> 图像与 manifest
-  -> LabelMe 标注 -> TensorFlow U-Net -> 网格检测与特征测量 -> Web 分析/教学反馈
+  -> LabelMe 标注 -> TensorFlow U-Net -> 完整回线重建/网格测量 -> Web 分析/教学反馈
 ```
 
 ## 功能模块
@@ -21,8 +21,8 @@
 | --- | --- |
 | A. STM32 可编程发生器 | 生成并通过双 DAC 输出可调磁滞回线；接收蓝牙参数协议。 |
 | B. Windows 自动采集端 | 导入参数表、串口下发、等待稳定、ADB 拍摄、断点续拍、重试及 manifest 记录。 |
-| C. AI 视觉测量 | LabelMe 曲线监督、TensorFlow U-Net 分割、逐图网格检测、Hc/Br/饱和端点测量。 |
-| D. Web 教学与分析 | Streamlit 交互式上传、分割结果、关键点复核、回线和教学反馈展示。 |
+| C. AI 视觉测量 | LabelMe 曲线监督、TensorFlow U-Net 分割、上下分支中心线重建、逐图横纵网格检测及 Hc/Br/饱和端点测量。 |
+| D. Web 教学与分析 | Streamlit 交互式上传、完整分割回线绘图、关键点复核、失败回退和教学反馈展示。 |
 
 ## 快速开始
 

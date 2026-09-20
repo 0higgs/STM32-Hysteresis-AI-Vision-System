@@ -3,13 +3,13 @@
 ## 模块职责
 
 - `app.py`：正式 Streamlit 入口，组织上传、模式切换、人工点位、U-Net 结果与可选教学反馈。
-- `ai_model/unet_measurement.py`：加载 `models/hysteresis_unet_v1.keras`，裁剪固定屏幕区域、分割回线、检测当前图网格和零轴、输出几何测量。
+- `ai_model/unet_measurement.py`：加载 `models/hysteresis_unet_v1.keras`，裁剪固定屏幕区域、分割回线、重建有序上下分支、独立检测横纵网格与零轴并输出几何测量。
 - `desktop_capture/main.py`：Tkinter 上位机，负责串口通信、参数表调度、状态确认、自动采集恢复。
 - `desktop_capture/adb_camera.py`：ADB 命令、拍照、拉取图像与可取消操作封装。
 - `desktop_capture/dataset_manifest.py`：成功采集记录和断点判断。
 - `firmware/User/hyst_model.[ch]`：磁滞轨迹计算与双 DAC 缓冲。
 - `firmware/User/bt_protocol.[ch]`：蓝牙命令解析、参数校验与状态反馈。
-- `ai_pipeline/`：数据准备、TensorFlow 训练、预测、网格/参数评估工具。
+- `ai_pipeline/`：数据准备、TensorFlow 训练、预测、网格/参数评估工具，以及完整回线重建的分割集验证脚本。
 
 ## 设计约束
 

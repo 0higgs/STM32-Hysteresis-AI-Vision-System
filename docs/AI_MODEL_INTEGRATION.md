@@ -4,7 +4,7 @@
 
 部署模型位于 `models/hysteresis_unet_v1.keras`。它不是颜色阈值，而是由人工标注曲线训练出的 TensorFlow U-Net，输入固定相机/示波器位置的照片，输出像素级磁滞回线掩膜。2026-09-19 使用最新 136 份标注重训后，110/26 分层留出划分上的平均 Dice 为 `0.8952`、平均 IoU 为 `0.8117`。该结果仍来自同一固定采集装置，应称为“留出验证结果”，不是跨设备泛化结论。
 
-完整链路为：**照片 -> U-Net 语义分割 -> 固定网格几何测量 -> Hc/Br/极值（格数/通道电压） -> 教学解释与人工复核**。
+完整链路为：**照片 -> U-Net 语义分割 -> 上下分支中心线重建 -> 横纵网格几何标定 -> 完整 B-H 回线绘图 -> Hc/Br/极值测量 -> 教学解释与人工复核**。八个核心点用于测量、校验和失败回退，不再作为 U-Net 成功时的主曲线数据源。
 
 ## 替换旧 Streamlit 代码
 
@@ -20,7 +20,14 @@ def get_unet_measurer():
 # original_image 是 PIL.Image.Image；示波器两通道均为 0.5 V/div
 result = get_unet_measurer().analyse(original_image)
 st.image(result["overlay"], caption="U-Net segmentation")
-st.json({"features_div": result["features_div"], "trace_pixels": result["trace_pixels"]})
+st.json({
+    "features_div": result["features_div"],
+    "trace_pixels": result["trace_pixels"],
+    "branches_in_crop": result["branches_in_crop"],
+    "grid_size_x_px": result["grid_size_x_px"],
+    "grid_size_y_px": result["grid_size_y_px"],
+    "grid_quality": result["grid_quality"],
+})
 ```
 
 不要调用旧代码中默认 `N1/L/R1/R2/C/N2/S` 的 H/B 换算。现阶段界面应显示“div”和“V”；当实际电路常数重新标定后，再将其写入单独的校准文件。

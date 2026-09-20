@@ -38,7 +38,7 @@ AI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 AI_MODEL = "qwen-vl-max"
 
 
-STATE_SCHEMA_VERSION = 7
+STATE_SCHEMA_VERSION = 8
 if st.session_state.get("state_schema_version") != STATE_SCHEMA_VERSION:
     for stale_key in [
         "clicks", "aux_branches", "upload_digest", "ai_measurement_meta",
@@ -101,6 +101,22 @@ def fixed_crop_points_to_display(point_map, original_size, display_size):
         source_y = top + float(y) / UNetLoopMeasurer.TARGET_SIZE[1] * (bottom - top)
         mapped[name] = (int(round(source_x * sx)), int(round(source_y * sy)))
     return mapped
+
+
+def fixed_crop_path_to_display(path, original_size, display_size):
+    """Map an ordered U-Net crop path to the displayed image coordinates."""
+    left, top, right, bottom = UNetLoopMeasurer.ROI
+    source_scale_x = (right - left) / UNetLoopMeasurer.TARGET_SIZE[0]
+    source_scale_y = (bottom - top) / UNetLoopMeasurer.TARGET_SIZE[1]
+    display_scale_x = display_size[0] / original_size[0]
+    display_scale_y = display_size[1] / original_size[1]
+    return [
+        (
+            (left + float(x) * source_scale_x) * display_scale_x,
+            (top + float(y) * source_scale_y) * display_scale_y,
+        )
+        for x, y in path
+    ]
 
 
 def encode_image(pil_img):
@@ -327,25 +343,23 @@ def detect_core_points_cv(pil_img):
     origin_x = screen_x + center_column
     origin_y = screen_y + center_row
 
-    spacing_candidates = []
+    spacing_by_axis = []
     for peaks, extent in ((column_peaks, screen_w), (row_peaks, screen_h)):
         differences = np.diff(peaks)
         differences = differences[
             (differences > extent / 20.0) & (differences < extent / 6.0)
         ]
-        if len(differences):
-            spacing_candidates.append(float(np.median(differences)))
-    grid_size = (
-        float(np.mean(spacing_candidates))
-        if spacing_candidates
-        else (screen_w / 10.0 + screen_h / 8.0) / 2.0
-    )
-    scale_right = (int(round(origin_x + grid_size)), origin_y)
+        spacing_by_axis.append(float(np.median(differences)) if len(differences) >= 3 else None)
+    grid_size_x, grid_size_y = spacing_by_axis
+    if len(column_peaks) < 5 or len(row_peaks) < 5 or grid_size_x is None or grid_size_y is None:
+        raise ValueError("网格线检测不完整，无法可靠确定横纵格距，请调整拍摄角度或改用人工标定")
+    scale_right = (int(round(origin_x + grid_size_x)), origin_y)
 
     trace_ys, trace_xs = np.nonzero(trace_mask)
-    band = max(5, int(round(grid_size * 0.12)))
-    horizontal_xs = trace_xs[np.abs(trace_ys - origin_y) <= band]
-    vertical_ys = trace_ys[np.abs(trace_xs - origin_x) <= band]
+    horizontal_band = max(5, int(round(grid_size_y * 0.12)))
+    vertical_band = max(5, int(round(grid_size_x * 0.12)))
+    horizontal_xs = trace_xs[np.abs(trace_ys - origin_y) <= horizontal_band]
+    vertical_ys = trace_ys[np.abs(trace_xs - origin_x) <= vertical_band]
     if len(horizontal_xs) < 10:
         raise ValueError("荧光轨迹未与 B=0 水平轴形成两个清晰交点，请人工标定 Hc±")
     if len(vertical_ys) < 10:
@@ -383,7 +397,10 @@ def detect_core_points_cv(pil_img):
         "source": "computer_vision",
         "geometry_validation": "passed",
         "screen_roi": [screen_x, screen_y, screen_w, screen_h],
-        "grid_size_px": round(grid_size, 2),
+        "grid_size_px": round((grid_size_x + grid_size_y) / 2.0, 2),
+        "grid_size_display_x_px": round(grid_size_x, 2),
+        "grid_size_display_y_px": round(grid_size_y, 2),
+        "grid_quality": {"status": "detected"},
         "trace_pixels": int(trace_area),
         "trace_bbox": [int(trace_w), int(trace_h)],
         "evidence": "程序检测蓝绿色网格屏幕和连续荧光轨迹，并直接计算轴线交点与轨迹端点。",
@@ -551,7 +568,9 @@ if uploaded_file is not None:
 
     clicks = st.session_state["clicks"]
     is_ready = len(clicks) >= 8 and recalibrate_index is None
-    pixels_per_div = 0.0
+    pixels_per_div_x = 0.0
+    pixels_per_div_y = 0.0
+    grid_scale_mode = "unavailable"
 
     h_c_neg = h_c_pos = b_r_pos = b_r_neg = 0.0
     h_m_pos = h_m_neg = b_m_pos = b_m_neg = 0.0
@@ -565,13 +584,22 @@ if uploaded_file is not None:
         p_hc_neg, p_hc_pos = clicks[2], clicks[3]
         p_br_pos, p_br_neg = clicks[4], clicks[5]
         p_extreme_pos, p_extreme_neg = clicks[6], clicks[7]
-        pixels_per_div = abs(p_scale[0] - p_center[0])
+        pixels_per_div_x = abs(p_scale[0] - p_center[0])
+        detected_y_spacing = (st.session_state.get("ai_measurement_meta") or {}).get(
+            "grid_size_display_y_px"
+        )
+        if detected_y_spacing is not None and float(detected_y_spacing) > 1.0:
+            pixels_per_div_y = float(detected_y_spacing)
+            grid_scale_mode = "independent_xy"
+        else:
+            pixels_per_div_y = pixels_per_div_x
+            grid_scale_mode = "isotropic_fallback"
 
-        if pixels_per_div > 1.0:
+        if pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0:
             def point_to_physical(point):
                 px, py = point
-                h_value = (px - p_center[0]) / pixels_per_div * x_volts * Kx
-                b_value = (p_center[1] - py) / pixels_per_div * y_volts * Ky
+                h_value = (px - p_center[0]) / pixels_per_div_x * x_volts * Kx
+                b_value = (p_center[1] - py) / pixels_per_div_y * y_volts * Ky
                 return float(h_value), float(b_value)
 
             h_c_neg = point_to_physical(p_hc_neg)[0]
@@ -626,19 +654,38 @@ if uploaded_file is not None:
                         point_map = fixed_crop_points_to_display(
                             result["points_in_crop"], original_image.size, analysis_image.size
                         )
+                        grid_quality = result.get("grid_quality", {})
+                        if grid_quality.get("status") != "detected":
+                            raise ValueError(
+                                "横纵网格未被完整检测，系统拒绝使用固定参考值冒充动态标定"
+                            )
                         ordered_names = [
                             "origin", "scale_right", "hc_negative", "hc_positive",
                             "br_positive", "br_negative", "extreme_positive", "extreme_negative",
                         ]
+                        validation_errors = validate_ai_core_points(
+                            {name: point_map[name] for name in ordered_names},
+                            analysis_image.width,
+                            analysis_image.height,
+                        )
+                        if validation_errors:
+                            raise ValueError("；".join(validation_errors))
+                        grid_size_display_x = abs(point_map["scale_right"][0] - point_map["origin"][0])
+                        grid_size_display_y = abs(point_map["origin"][1] - point_map["scale_up"][1])
                         st.session_state["clicks"] = [point_map[name] for name in ordered_names]
                         st.session_state["aux_branches"] = []
                         st.session_state["recalibrate_index"] = None
                         st.session_state["unet_result"] = result
                         st.session_state["ai_measurement_meta"] = {
                             "source": "trained_unet",
-                            "geometry_validation": "fixed-grid",
+                            "geometry_validation": "passed",
                             "trace_pixels": result["trace_pixels"],
                             "grid_size_px": result["grid_size_px"],
+                            "grid_size_crop_x_px": result["grid_size_x_px"],
+                            "grid_size_crop_y_px": result["grid_size_y_px"],
+                            "grid_size_display_x_px": grid_size_display_x,
+                            "grid_size_display_y_px": grid_size_display_y,
+                            "grid_quality": grid_quality,
                             "confidence": result["mean_probability_on_trace"],
                             "warnings": ["AI 结果应与原始荧光轨迹复核；图片须来自固定相机与示波器位置。"],
                         }
@@ -689,8 +736,15 @@ if uploaded_file is not None:
                 st.caption("标记说明：紫色为正、负饱和端点（右上/左下）；红色为 Hc−、Hc+；蓝色为 Br+、Br−；白色为原点与一格标尺。")
             st.success(
                 f"机器视觉几何校验：通过；检测轨迹像素：{meta.get('trace_pixels', 0)}；"
-                f"估计网格：{meta.get('grid_size_px', 0):.1f} px/div。"
+                f"显示坐标网格：X={meta.get('grid_size_display_x_px', 0):.1f}、"
+                f"Y={meta.get('grid_size_display_y_px', 0):.1f} px/div。"
             )
+            if meta.get("source") == "trained_unet":
+                st.caption(
+                    f"模型裁剪坐标网格：X={meta.get('grid_size_crop_x_px', 0):.1f}、"
+                    f"Y={meta.get('grid_size_crop_y_px', 0):.1f} px/div；"
+                    "两组数值属于不同图像坐标系。"
+                )
             if meta.get("evidence"):
                 st.caption(f"识别依据：{meta['evidence']}")
             for warning in meta.get("warnings", []):
@@ -761,9 +815,14 @@ if uploaded_file is not None:
                 reset_measurement_state()
                 st.rerun()
 
-            if is_ready and pixels_per_div > 1.0:
+            if is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0:
                 st.success("核心标定完成，请检查正负符号和机器视觉标定点。")
-                st.metric("网格像素比", f"{pixels_per_div:.1f} px/div")
+                st.metric(
+                    "网格像素比（显示坐标）",
+                    f"X {pixels_per_div_x:.1f} / Y {pixels_per_div_y:.1f} px/div",
+                )
+                if grid_scale_mode == "isotropic_fallback":
+                    st.caption("当前未获得独立纵向格距，暂按 X、Y 等比例处理；透视明显时应人工复核。")
                 measurement_source = "机器视觉标定后人工复核" if meta else "人工标定"
                 st.metric("测量方式", measurement_source)
             elif is_ready:
@@ -778,18 +837,33 @@ if uploaded_file is not None:
         def transform(h_value, b_value):
             return (h_value - h_offset) / h_scale, (b_value - b_offset) / b_scale
 
-        upper_raw = [(h_m_neg, b_m_neg), (h_c_neg, 0.0), (0.0, b_r_pos), (h_m_pos, b_m_pos)]
-        lower_raw = [(h_m_neg, b_m_neg), (0.0, b_r_neg), (h_c_pos, 0.0), (h_m_pos, b_m_pos)]
-        upper = [transform(h, b) for h, b in upper_raw]
-        lower = [transform(h, b) for h, b in lower_raw]
-
         aux_upper, aux_lower = [], []
         for point, branch in zip(clicks[8:], st.session_state["aux_branches"]):
             h_value, b_value = point_to_physical(point)
             transformed = transform(h_value, b_value)
             (aux_upper if branch == "上分支" else aux_lower).append(transformed)
-        upper.extend(aux_upper)
-        lower.extend(aux_lower)
+
+        full_trace_used = False
+        deployed_result = st.session_state.get("unet_result") or {}
+        branches_in_crop = deployed_result.get("branches_in_crop") or {}
+        if branches_in_crop.get("upper") and branches_in_crop.get("lower"):
+            upper_display = fixed_crop_path_to_display(
+                branches_in_crop["upper"], original_image.size, analysis_image.size
+            )
+            lower_display = fixed_crop_path_to_display(
+                branches_in_crop["lower"], original_image.size, analysis_image.size
+            )
+            upper = [transform(*point_to_physical(point)) for point in upper_display]
+            lower = [transform(*point_to_physical(point)) for point in lower_display]
+            full_trace_used = len(upper) >= 40 and len(lower) >= 40
+
+        if not full_trace_used:
+            upper_raw = [(h_m_neg, b_m_neg), (h_c_neg, 0.0), (0.0, b_r_pos), (h_m_pos, b_m_pos)]
+            lower_raw = [(h_m_neg, b_m_neg), (0.0, b_r_neg), (h_c_pos, 0.0), (h_m_pos, b_m_pos)]
+            upper = [transform(h, b) for h, b in upper_raw]
+            lower = [transform(h, b) for h, b in lower_raw]
+            upper.extend(aux_upper)
+            lower.extend(aux_lower)
 
         upper_h, upper_b = zip(*upper)
         lower_h, lower_b = zip(*lower)
@@ -797,12 +871,13 @@ if uploaded_file is not None:
         pchip_dn, min_h_dn, max_h_dn = build_pchip(lower_h, lower_b)
 
         fig = go.Figure()
+        curve_prefix = "U-Net完整回线" if full_trace_used else "核心点回退"
         if pchip_up is not None:
             x_up = np.linspace(min_h_up, max_h_up, 240)
-            fig.add_trace(go.Scatter(x=x_up, y=pchip_up(x_up), mode="lines", line=dict(color="#00a878", width=3), name="上分支"))
+            fig.add_trace(go.Scatter(x=x_up, y=pchip_up(x_up), mode="lines", line=dict(color="#00a878", width=3), name=f"{curve_prefix}·上分支"))
         if pchip_dn is not None:
             x_dn = np.linspace(min_h_dn, max_h_dn, 240)
-            fig.add_trace(go.Scatter(x=x_dn, y=pchip_dn(x_dn), mode="lines", line=dict(color="#f28e2b", width=3), name="下分支"))
+            fig.add_trace(go.Scatter(x=x_dn, y=pchip_dn(x_dn), mode="lines", line=dict(color="#f28e2b", width=3), name=f"{curve_prefix}·下分支"))
 
         core_points = [transform(h, b) for h, b in [
             (h_c_neg, 0.0), (h_c_pos, 0.0), (0.0, b_r_pos), (0.0, b_r_neg),
@@ -819,6 +894,7 @@ if uploaded_file is not None:
 
         unit_h, unit_b = ("H/Hm", "B/Bm") if normalized else (("H (A/m)", "B (T)") if physical_calibration_enabled else ("X channel (V)", "Y channel (V)"))
         title = "无量纲磁滞回线" if normalized else ("保留正负方向的 B-H 磁滞回线" if physical_calibration_enabled else "示波器通道电压回线（未使用旧默认电路参数）")
+        title += "（完整分割曲线）" if full_trace_used else "（核心点拟合回退）"
         if center_for_display:
             title += "（仅显示时扣除估计中心偏移）"
         fig.update_layout(
@@ -836,7 +912,7 @@ if uploaded_file is not None:
         )
         if assessment_locked:
             st.info("考核进行中，B-H 数值与曲线将在提交考核后显示。")
-        elif is_ready and pixels_per_div > 1.0:
+        elif is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0:
             st.plotly_chart(plot_loop(normalized=False), use_container_width=True)
             metric_cols = st.columns(4)
             h_unit, b_unit = ("A/m", "T") if physical_calibration_enabled else ("V", "V")
@@ -854,13 +930,13 @@ if uploaded_file is not None:
     with tab3:
         if assessment_locked:
             st.info("考核进行中，归一化结果将在提交考核后显示。")
-        elif is_ready and pixels_per_div > 1.0:
+        elif is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0:
             st.plotly_chart(plot_loop(normalized=True), use_container_width=True)
             st.caption("此图使用 H/Hm 与 B/Bm，为真正的无量纲归一化；示波器电压不再称为归一化参数。")
         else:
             st.info("请先完成 8 个核心点标定。")
 
-    measurement_ready = is_ready and pixels_per_div > 1.0
+    measurement_ready = is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0
     measurement_payload = {}
     table_data = None
     if measurement_ready:
