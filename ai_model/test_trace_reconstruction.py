@@ -11,6 +11,7 @@ from ai_model.unet_measurement import (
     UNetLoopMeasurer,
     extract_trace_branches,
     measure_trace_features,
+    regularize_branch_endpoints,
 )
 
 
@@ -60,6 +61,32 @@ class TraceReconstructionTests(unittest.TestCase):
         self.assertGreater(features["hc_positive"], 0.0)
         self.assertGreater(features["br_positive"], 0.0)
         self.assertLess(features["br_negative"], 0.0)
+
+    def test_endpoint_regularization_closes_without_changing_loop_body(self) -> None:
+        xs = np.arange(0.0, 121.0)
+        upper_y = np.full_like(xs, 80.0)
+        lower_y = np.full_like(xs, 80.0)
+        upper_y[20:61] = np.linspace(80.0, 40.0, 41)
+        upper_y[61:] = 40.0
+        lower_y[60:101] = np.linspace(80.0, 40.0, 41)
+        lower_y[101:] = 40.0
+        # Simulate segmentation noise at the two merge locations.
+        upper_y[18:23] += np.array([0.0, 1.5, -2.0, 1.0, 0.0])
+        lower_y[98:103] += np.array([0.0, -1.0, 2.0, -1.5, 0.0])
+
+        result = regularize_branch_endpoints(
+            list(zip(xs, upper_y)),
+            list(zip(xs, lower_y)),
+        )
+        upper_result = np.asarray(result["upper"])
+        lower_result = np.asarray(result["lower"])
+
+        self.assertTrue(np.all(upper_result[:, 1] <= lower_result[:, 1] + 1e-9))
+        self.assertAlmostEqual(upper_result[0, 1], lower_result[0, 1], places=6)
+        self.assertAlmostEqual(upper_result[-1, 1], lower_result[-1, 1], places=6)
+        self.assertGreater(lower_result[60, 1] - upper_result[60, 1], 30.0)
+        self.assertLess(np.max(np.abs(np.diff(lower_result[:18, 1], n=2))), 0.25)
+        self.assertLess(np.max(np.abs(np.diff(upper_result[-18:, 1], n=2))), 0.25)
 
 
 if __name__ == "__main__":

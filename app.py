@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw
 from scipy.interpolate import PchipInterpolator
 from scipy.signal import find_peaks
 from streamlit_image_coordinates import streamlit_image_coordinates
+from ai_model.loop_metrics import calculate_loop_area
 from ai_model.unet_measurement import UNetLoopMeasurer
 
 
@@ -928,6 +929,8 @@ if uploaded_file is not None:
             x_dn = np.linspace(min_h_dn, max_h_dn, 240)
             fig.add_trace(go.Scatter(x=x_dn, y=pchip_dn(x_dn), mode="lines", line=dict(color="#f28e2b", width=3), name=f"{curve_prefix}·下分支"))
 
+        loop_metrics = calculate_loop_area(upper, lower)
+
         core_points = [transform(h, b) for h, b in [
             (h_c_neg, 0.0), (h_c_pos, 0.0), (0.0, b_r_pos), (0.0, b_r_neg),
             (h_m_pos, b_m_pos), (h_m_neg, b_m_neg),
@@ -951,7 +954,14 @@ if uploaded_file is not None:
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(zeroline=True, zerolinewidth=1), yaxis=dict(zeroline=True, zerolinewidth=1),
         )
-        return fig
+        return fig, loop_metrics
+
+    measurement_ready = is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0
+    bh_figure = normalized_figure = None
+    bh_loop_metrics = normalized_loop_metrics = None
+    if measurement_ready:
+        bh_figure, bh_loop_metrics = plot_loop(normalized=False)
+        normalized_figure, normalized_loop_metrics = plot_loop(normalized=True)
 
     with tab2:
         assessment_locked = (
@@ -961,14 +971,22 @@ if uploaded_file is not None:
         )
         if assessment_locked:
             st.info("考核进行中，B-H 数值与曲线将在提交考核后显示。")
-        elif is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0:
-            render_square_plot(plot_loop(normalized=False), key="square-bh-result")
+        elif measurement_ready:
+            render_square_plot(bh_figure, key="square-bh-result")
             metric_cols = st.columns(4)
             h_unit, b_unit = ("A/m", "T") if physical_calibration_enabled else ("V", "V")
             metric_cols[0].metric("Hc-", f"{h_c_neg:.2f} {h_unit}")
             metric_cols[1].metric("Hc+", f"{h_c_pos:.2f} {h_unit}")
             metric_cols[2].metric("Br+", f"{b_r_pos:.4f} {b_unit}")
             metric_cols[3].metric("Br-", f"{b_r_neg:.4f} {b_unit}")
+            if physical_calibration_enabled:
+                st.metric("单位体积磁滞损耗（单周期）", f"{bh_loop_metrics['area']:.4g} J/m³")
+                st.caption("按最终上下分支积分得到 |∮H dB|；该值表示单周期、单位体积的磁滞能量损耗。")
+            else:
+                st.metric("回线面积（通道电压坐标）", f"{bh_loop_metrics['area']:.4f} V²")
+                st.caption("当前未完成真实电路参数标定，因此只报告 X/Y 通道电压坐标面积，不能写成 J/m³。")
+            if bh_loop_metrics["crossing_fraction"] > 0.02:
+                st.warning("上下分支存在较明显交叉，回线面积可能受端部识别影响，请先人工复核曲线。")
             st.caption(
                 f"估计水平中心偏移 H_bias={h_bias:.2f} {h_unit}；垂直中心偏移 B_bias={b_bias:.4f} {b_unit}。"
                 "这些量不会被自动删除，可用于判断仪器零偏或真实物理不对称。"
@@ -979,13 +997,13 @@ if uploaded_file is not None:
     with tab3:
         if assessment_locked:
             st.info("考核进行中，归一化结果将在提交考核后显示。")
-        elif is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0:
-            render_square_plot(plot_loop(normalized=True), key="square-normalized-result")
+        elif measurement_ready:
+            render_square_plot(normalized_figure, key="square-normalized-result")
+            st.metric("无量纲回线面积", f"{normalized_loop_metrics['area']:.4f}")
             st.caption("此图使用 H/Hm 与 B/Bm，为真正的无量纲归一化；示波器电压不再称为归一化参数。")
         else:
             st.info("请先完成 8 个核心点标定。")
 
-    measurement_ready = is_ready and pixels_per_div_x > 1.0 and pixels_per_div_y > 1.0
     measurement_payload = {}
     table_data = None
     if measurement_ready:
@@ -1005,6 +1023,10 @@ if uploaded_file is not None:
             "B_endpoint_asymmetry_after_centering": b_shape_asymmetry,
             "H_center_offset_ratio": h_center_offset_ratio,
             "B_center_offset_ratio": b_center_offset_ratio,
+            "loop_area": bh_loop_metrics["area"],
+            "loop_area_unit": "J/m^3" if physical_calibration_enabled else "V^2",
+            "normalized_loop_area": normalized_loop_metrics["area"],
+            "branch_crossing_fraction": bh_loop_metrics["crossing_fraction"],
         }
         table_data = {
             "测量节点": ["Hc-", "Hc+", "Br+", "Br-", "正极值", "负极值", "半宽/半高", "中心偏移"],
@@ -1267,9 +1289,11 @@ if uploaded_file is not None:
             st.table(pd.DataFrame(score_table))
             if measurement_ready:
                 render_square_plot(
-                    plot_loop(normalized=False),
+                    bh_figure,
                     key="square-assessment-result",
                 )
+                assessment_area_unit = "J/m³" if physical_calibration_enabled else "V²"
+                st.metric("回线面积", f"{bh_loop_metrics['area']:.4g} {assessment_area_unit}")
                 st.table(pd.DataFrame(table_data))
             if st.button("重新开始考核", use_container_width=True):
                 st.session_state["assessment_result"] = None

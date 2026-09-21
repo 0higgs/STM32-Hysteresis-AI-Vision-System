@@ -59,15 +59,147 @@ def extract_trace_branches(mask: np.ndarray) -> dict[str, list[tuple[float, floa
     if len(upper) < max(25, width // 20):
         raise ValueError("U-Net 回线横向跨度不足，无法重建完整分支")
 
-    def smooth(branch: list[tuple[float, float]]) -> list[tuple[float, float]]:
-        points = np.asarray(branch, dtype=float)
-        sample_count = len(points)
-        window = min(31, sample_count if sample_count % 2 else sample_count - 1)
-        if window >= 7:
-            points[:, 1] = savgol_filter(points[:, 1], window_length=window, polyorder=2, mode="interp")
-        return [(float(x), float(y)) for x, y in points]
+    return regularize_branch_endpoints(upper, lower)
 
-    return {"upper": smooth(upper), "lower": smooth(lower)}
+
+def regularize_branch_endpoints(
+    upper: list[tuple[float, float]],
+    lower: list[tuple[float, float]],
+) -> dict[str, list[tuple[float, float]]]:
+    """Smooth only the branch-merging zones near both saturation extrema.
+
+    In image coordinates the lower branch is the stable negative-saturation
+    plateau on the left, while the upper branch is the stable
+    positive-saturation plateau on the right.  The joining branch is blended
+    into that anchor with a C2 smootherstep.  The central measured loop is left
+    untouched apart from the same light Savitzky-Golay denoising used before.
+    """
+
+    upper_points = np.asarray(upper, dtype=float)
+    lower_points = np.asarray(lower, dtype=float)
+    if upper_points.shape != lower_points.shape or upper_points.ndim != 2 or upper_points.shape[1] != 2:
+        raise ValueError("上下分支必须具有一致的二维坐标")
+    if len(upper_points) < 7 or not np.allclose(upper_points[:, 0], lower_points[:, 0]):
+        raise ValueError("上下分支横坐标不一致，无法平滑合并区")
+
+    sample_count = len(upper_points)
+    window = min(31, sample_count if sample_count % 2 else sample_count - 1)
+    upper_y = upper_points[:, 1].copy()
+    lower_y = lower_points[:, 1].copy()
+    if window >= 7:
+        upper_y = savgol_filter(upper_y, window_length=window, polyorder=2, mode="interp")
+        lower_y = savgol_filter(lower_y, window_length=window, polyorder=2, mode="interp")
+
+    separation = np.maximum(lower_y - upper_y, 0.0)
+    reference_separation = float(np.percentile(separation, 95))
+    merge_threshold = max(2.0, 0.025 * reference_separation)
+    active = np.flatnonzero(separation > merge_threshold)
+    if len(active) == 0:
+        shared = (upper_y + lower_y) / 2.0
+        upper_y = lower_y = shared
+    else:
+        first_active, last_active = int(active[0]), int(active[-1])
+        transition = max(8, min(24, int(round(sample_count * 0.06))))
+
+        def smootherstep(values: np.ndarray) -> np.ndarray:
+            clipped = np.clip(values, 0.0, 1.0)
+            return clipped**3 * (clipped * (clipped * 6.0 - 15.0) + 10.0)
+
+        def robust_line_coefficients(x_values: np.ndarray, y_values: np.ndarray) -> np.ndarray:
+            coefficients = np.polyfit(x_values, y_values, deg=1)
+            residual = y_values - np.polyval(coefficients, x_values)
+            mad = float(np.median(np.abs(residual - np.median(residual))))
+            keep = np.abs(residual) <= max(1.0, 3.0 * 1.4826 * mad)
+            if int(np.count_nonzero(keep)) >= 4:
+                coefficients = np.polyfit(x_values[keep], y_values[keep], deg=1)
+            return coefficients
+
+        left_start = max(0, first_active - transition)
+        left_end = min(last_active, first_active + transition)
+        right_start = max(first_active, last_active - transition)
+        right_end = min(sample_count - 1, last_active + transition)
+
+        # Remove small U-Net/mask notches from the two stable saturation
+        # plateaus themselves.  A robust local line retains a genuine gentle
+        # saturation slope.  Extend the plateau until five consecutive samples
+        # depart by more than 2% of the loop height, then blend back with zero
+        # endpoint derivatives so no replacement kink is introduced.
+        vertical_span = max(float(np.ptp(np.concatenate([upper_y, lower_y]))), 1.0)
+        plateau_tolerance = max(2.0, 0.02 * vertical_span)
+        all_x = upper_points[:, 0]
+
+        if first_active >= 4:
+            seed = np.arange(0, first_active + 1)
+            coefficients = robust_line_coefficients(all_x[seed], lower_y[seed])
+            baseline_all = np.polyval(coefficients, all_x)
+            residual = np.abs(lower_y - baseline_all)
+            left_anchor_end = left_end
+            for index in range(first_active, sample_count - 4):
+                if np.all(residual[index : index + 5] > plateau_tolerance):
+                    left_anchor_end = max(left_end, index - 1)
+                    break
+            indices = np.arange(0, left_anchor_end + 1)
+            baseline = baseline_all[indices]
+            blend = np.ones_like(indices, dtype=float)
+            transition_indices = indices >= left_start
+            blend[transition_indices] = smootherstep(
+                (left_anchor_end - indices[transition_indices])
+                / max(1, left_anchor_end - left_start)
+            )
+            lower_y[indices] = lower_y[indices] * (1.0 - blend) + baseline * blend
+
+        if sample_count - 1 - last_active >= 4:
+            seed = np.arange(last_active, sample_count)
+            coefficients = robust_line_coefficients(all_x[seed], upper_y[seed])
+            baseline_all = np.polyval(coefficients, all_x)
+            residual = np.abs(upper_y - baseline_all)
+            right_anchor_start = right_start
+            for index in range(last_active, 3, -1):
+                if np.all(residual[index - 4 : index + 1] > plateau_tolerance):
+                    right_anchor_start = min(right_start, index + 1)
+                    break
+            indices = np.arange(right_anchor_start, sample_count)
+            baseline = baseline_all[indices]
+            blend = np.ones_like(indices, dtype=float)
+            transition_indices = indices <= right_end
+            blend[transition_indices] = smootherstep(
+                (indices[transition_indices] - right_anchor_start)
+                / max(1, right_end - right_anchor_start)
+            )
+            upper_y[indices] = upper_y[indices] * (1.0 - blend) + baseline * blend
+
+        separation = np.maximum(lower_y - upper_y, 0.0)
+
+        # Left: keep the measured negative-saturation (lower) plateau and
+        # smoothly grow the branch separation towards the loop body.
+        if first_active >= 4:
+            denominator = max(1, left_end - left_start)
+            indices = np.arange(left_start, left_end + 1)
+            weight = smootherstep((indices - left_start) / denominator)
+            upper_y[:left_start] = lower_y[:left_start]
+            upper_y[indices] = lower_y[indices] - separation[indices] * weight
+
+        # Right: keep the measured positive-saturation (upper) plateau and
+        # smoothly collapse the returning branch into it.
+        if sample_count - 1 - last_active >= 4:
+            denominator = max(1, right_end - right_start)
+            indices = np.arange(right_start, right_end + 1)
+            weight = smootherstep((right_end - indices) / denominator)
+            lower_y[indices] = upper_y[indices] + separation[indices] * weight
+            lower_y[right_end + 1 :] = upper_y[right_end + 1 :]
+
+    # A sub-pixel Savitzky-Golay overshoot must never swap branch order.
+    crossed = upper_y > lower_y
+    if np.any(crossed):
+        shared = (upper_y[crossed] + lower_y[crossed]) / 2.0
+        upper_y[crossed] = shared
+        lower_y[crossed] = shared
+
+    x_values = upper_points[:, 0]
+    return {
+        "upper": [(float(x), float(y)) for x, y in zip(x_values, upper_y)],
+        "lower": [(float(x), float(y)) for x, y in zip(x_values, lower_y)],
+    }
 
 
 def measure_trace_features(
