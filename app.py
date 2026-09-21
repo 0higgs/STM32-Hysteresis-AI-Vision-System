@@ -30,6 +30,31 @@ st.markdown(
 st.markdown(
     """
     <style>
+    /* Increase the whole interface by one readable step.  Streamlit sizes most
+       text in rem, so a larger root size keeps headings, controls and body
+       copy in proportion instead of enlarging isolated elements. */
+    html {
+        font-size: 18px;
+    }
+    button[data-baseweb="tab"] p,
+    [data-testid="stSidebar"] label,
+    [data-testid="stFileUploader"] label {
+        font-size: 1.02rem !important;
+    }
+    [data-testid="stMetricLabel"] p {
+        font-size: 1rem !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 2rem !important;
+    }
+    [data-testid="stTable"] table {
+        font-size: 0.96rem !important;
+    }
+    .stButton button,
+    .stDownloadButton button,
+    [data-baseweb="select"] {
+        font-size: 1rem !important;
+    }
     /* Keep both result views square while remaining usable on phones. */
     .st-key-square-bh-result,
     .st-key-square-normalized-result,
@@ -57,6 +82,14 @@ st.markdown(
     .st-key-square-assessment-result .svg-container {
         width: 100% !important;
         height: 100% !important;
+    }
+    @media (max-width: 768px) {
+        html {
+            font-size: 16.5px;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.75rem !important;
+        }
     }
     </style>
     """,
@@ -921,15 +954,78 @@ if uploaded_file is not None:
         pchip_dn, min_h_dn, max_h_dn = build_pchip(lower_h, lower_b)
 
         fig = go.Figure()
-        curve_prefix = "U-Net完整回线" if full_trace_used else "核心点回退"
+        loop_metrics = calculate_loop_area(upper, lower)
+
+        # The translucent polygon uses the same interpolated branches and
+        # common H range as the numerical area calculation.  Drawing it first
+        # keeps both coloured branch lines and feature points visually clear.
+        x_fill = np.linspace(
+            loop_metrics["common_h_min"], loop_metrics["common_h_max"], 360
+        )
+        y_fill_upper = pchip_up(x_fill)
+        y_fill_lower = pchip_dn(x_fill)
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([x_fill, x_fill[::-1]]),
+            y=np.concatenate([y_fill_upper, y_fill_lower[::-1]]),
+            mode="lines",
+            line=dict(width=0),
+            fill="toself",
+            fillcolor="rgba(86, 180, 233, 0.16)",
+            name="积分区域",
+            hoverinfo="skip",
+        ))
         if pchip_up is not None:
             x_up = np.linspace(min_h_up, max_h_up, 240)
-            fig.add_trace(go.Scatter(x=x_up, y=pchip_up(x_up), mode="lines", line=dict(color="#00a878", width=3), name=f"{curve_prefix}·上分支"))
+            y_up = pchip_up(x_up)
+            fig.add_trace(go.Scatter(
+                x=x_up, y=y_up, mode="lines",
+                line=dict(color="#00a878", width=3),
+                name="上分支（H 减小）",
+            ))
         if pchip_dn is not None:
             x_dn = np.linspace(min_h_dn, max_h_dn, 240)
-            fig.add_trace(go.Scatter(x=x_dn, y=pchip_dn(x_dn), mode="lines", line=dict(color="#f28e2b", width=3), name=f"{curve_prefix}·下分支"))
+            y_dn = pchip_dn(x_dn)
+            fig.add_trace(go.Scatter(
+                x=x_dn, y=y_dn, mode="lines",
+                line=dict(color="#f28e2b", width=3),
+                name="下分支（H 增大）",
+            ))
 
-        loop_metrics = calculate_loop_area(upper, lower)
+        def add_direction_arrow(x_values, y_values, *, increasing, color):
+            """Place one unobtrusive arrow near the steepest central segment."""
+            central_start = max(2, len(x_values) // 10)
+            central_stop = min(len(x_values) - 2, len(x_values) * 9 // 10)
+            gradients = np.abs(np.gradient(y_values, x_values))
+            center_index = central_start + int(
+                np.argmax(gradients[central_start:central_stop])
+            )
+            half_span = max(3, len(x_values) // 40)
+            left_index = max(0, center_index - half_span)
+            right_index = min(len(x_values) - 1, center_index + half_span)
+            tail_index, head_index = (
+                (left_index, right_index) if increasing else (right_index, left_index)
+            )
+            fig.add_annotation(
+                x=float(x_values[head_index]),
+                y=float(y_values[head_index]),
+                ax=float(x_values[tail_index]),
+                ay=float(y_values[tail_index]),
+                xref="x",
+                yref="y",
+                axref="x",
+                ayref="y",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.25,
+                arrowwidth=2.6,
+                arrowcolor=color,
+            )
+
+        if pchip_up is not None:
+            add_direction_arrow(x_up, y_up, increasing=False, color="#007f5f")
+        if pchip_dn is not None:
+            add_direction_arrow(x_dn, y_dn, increasing=True, color="#c96b00")
 
         core_points = [transform(h, b) for h, b in [
             (h_c_neg, 0.0), (h_c_pos, 0.0), (0.0, b_r_pos), (0.0, b_r_neg),
@@ -937,7 +1033,7 @@ if uploaded_file is not None:
         ]]
         fig.add_trace(go.Scatter(
             x=[p[0] for p in core_points], y=[p[1] for p in core_points], mode="markers",
-            marker=dict(size=10, color="gold", line=dict(width=2, color="black")), name="实测特征点",
+            marker=dict(size=10, color="gold", line=dict(width=2, color="black")), name="特征点",
         ))
         if aux_upper:
             fig.add_trace(go.Scatter(x=[p[0] for p in aux_upper], y=[p[1] for p in aux_upper], mode="markers", marker=dict(color="cyan", symbol="cross", size=9), name="上分支辅助点"))
@@ -945,14 +1041,35 @@ if uploaded_file is not None:
             fig.add_trace(go.Scatter(x=[p[0] for p in aux_lower], y=[p[1] for p in aux_lower], mode="markers", marker=dict(color="orange", symbol="cross", size=9), name="下分支辅助点"))
 
         unit_h, unit_b = ("H/Hm", "B/Bm") if normalized else (("H (A/m)", "B (T)") if physical_calibration_enabled else ("X channel (V)", "Y channel (V)"))
-        title = "无量纲磁滞回线" if normalized else ("保留正负方向的 B-H 磁滞回线" if physical_calibration_enabled else "示波器通道电压回线（未使用旧默认电路参数）")
+        title = "无量纲磁滞回线" if normalized else ("B-H 磁滞回线" if physical_calibration_enabled else "示波器通道电压回线")
         title += "（完整分割曲线）" if full_trace_used else "（核心点拟合回退）"
         if center_for_display:
             title += "（仅显示时扣除估计中心偏移）"
         fig.update_layout(
-            title=title, xaxis_title=unit_h, yaxis_title=unit_b, hovermode="closest", autosize=True,
+            title=dict(
+                text=title,
+                x=0.5, xanchor="center",
+                y=0.98, yanchor="top",
+                font=dict(size=20),
+            ),
+            xaxis_title=unit_h, yaxis_title=unit_b, hovermode="closest", autosize=True,
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            xaxis=dict(zeroline=True, zerolinewidth=1), yaxis=dict(zeroline=True, zerolinewidth=1),
+            font=dict(size=16, family='"Microsoft YaHei", "Noto Sans CJK SC", sans-serif'),
+            legend=dict(
+                orientation="h",
+                yanchor="top", y=0.91,
+                xanchor="center", x=0.5,
+                font=dict(size=14),
+            ),
+            margin=dict(l=72, r=28, t=128, b=72),
+            xaxis=dict(
+                zeroline=True, zerolinewidth=1,
+                tickfont=dict(size=14), title_font=dict(size=16),
+            ),
+            yaxis=dict(
+                zeroline=True, zerolinewidth=1,
+                tickfont=dict(size=14), title_font=dict(size=16),
+            ),
         )
         return fig, loop_metrics
 
@@ -981,10 +1098,25 @@ if uploaded_file is not None:
             metric_cols[3].metric("Br-", f"{b_r_neg:.4f} {b_unit}")
             if physical_calibration_enabled:
                 st.metric("单位体积磁滞损耗（单周期）", f"{bh_loop_metrics['area']:.4g} J/m³")
-                st.caption("按最终上下分支积分得到 |∮H dB|；该值表示单周期、单位体积的磁滞能量损耗。")
+                st.latex(
+                    r"W_{\mathrm h}=\left|\oint H\,\mathrm dB\right|"
+                    r"=\int_{H_{\min}}^{H_{\max}}"
+                    r"\left[B_{\mathrm{upper}}(H)-B_{\mathrm{lower}}(H)\right]\,\mathrm dH"
+                )
+                st.caption(
+                    "浅蓝色区域为积分面积；橙色下支沿 H 增大方向、绿色上支沿 H 减小方向，"
+                    "箭头共同给出闭合回线方向。该值表示单周期、单位体积的磁滞能量损耗。"
+                )
             else:
                 st.metric("回线面积（通道电压坐标）", f"{bh_loop_metrics['area']:.4f} V²")
-                st.caption("当前未完成真实电路参数标定，因此只报告 X/Y 通道电压坐标面积，不能写成 J/m³。")
+                st.latex(
+                    r"A_{XY}=\int_{X_{\min}}^{X_{\max}}"
+                    r"\left[Y_{\mathrm{upper}}(X)-Y_{\mathrm{lower}}(X)\right]\,\mathrm dX"
+                )
+                st.caption(
+                    "浅蓝色区域为积分面积；橙色下支沿 X 增大方向、绿色上支沿 X 减小方向。"
+                    "当前未完成真实电路参数标定，因此只能报告通道电压坐标面积，不能写成 J/m³。"
+                )
             if bh_loop_metrics["crossing_fraction"] > 0.02:
                 st.warning("上下分支存在较明显交叉，回线面积可能受端部识别影响，请先人工复核曲线。")
             st.caption(
@@ -1000,7 +1132,15 @@ if uploaded_file is not None:
         elif measurement_ready:
             render_square_plot(normalized_figure, key="square-normalized-result")
             st.metric("无量纲回线面积", f"{normalized_loop_metrics['area']:.4f}")
-            st.caption("此图使用 H/Hm 与 B/Bm，为真正的无量纲归一化；示波器电压不再称为归一化参数。")
+            st.latex(
+                r"A^{*}=\int_{h_{\min}}^{h_{\max}}"
+                r"\left[b_{\mathrm{upper}}(h)-b_{\mathrm{lower}}(h)\right]\,\mathrm dh,"
+                r"\quad h=H/H_{\mathrm m},\ b=B/B_{\mathrm m}"
+            )
+            st.caption(
+                "浅蓝色区域为无量纲积分面积，箭头方向与 B-H 结果图一致。"
+                "此图使用 H/Hm 与 B/Bm；示波器电压不再称为归一化参数。"
+            )
         else:
             st.info("请先完成 8 个核心点标定。")
 
